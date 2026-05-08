@@ -1,0 +1,4 @@
+bin/
+*.sqlite3
+config.yml
+config.*.yml

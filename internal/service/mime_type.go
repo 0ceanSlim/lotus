@@ -1,0 +1,75 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"go.uber.org/zap"
+
+	"github.com/0ceanSlim/lotus/internal/config"
+	"github.com/0ceanSlim/lotus/internal/core"
+	"github.com/0ceanSlim/lotus/internal/db"
+)
+
+type mimeTypeService struct {
+	allowed  map[string]struct{}
+	allowAll bool
+	queries  *db.Queries
+	conf     *config.Config
+	log      *zap.Logger
+}
+
+func NewMimeTypeService(
+	ctx context.Context,
+	queries *db.Queries,
+	conf *config.Config,
+	log *zap.Logger,
+) (core.MimeTypeService, error) {
+	allowed := make(map[string]struct{})
+	allowAll := false
+
+	if len(conf.AllowedMimeTypes) == 1 && conf.AllowedMimeTypes[0] == "*" {
+		allowAll = true
+	} else {
+		for _, mime := range conf.AllowedMimeTypes {
+			_, err := queries.GetMimeType(ctx, mime)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", mime, core.ErrInvalidMimeType)
+			}
+			allowed[mime] = struct{}{}
+		}
+	}
+
+	return &mimeTypeService{
+		allowed:  allowed,
+		allowAll: allowAll,
+		queries:  queries,
+		conf:     conf,
+		log:      log,
+	}, nil
+}
+
+func (s *mimeTypeService) Get(ctx context.Context, mimeType string) (*core.MimeType, error) {
+	dbMimeType, err := s.queries.GetMimeType(ctx, mimeType)
+	return s.dbMimeTypeIntoCore(dbMimeType), err
+}
+
+func (s *mimeTypeService) IsAllowed(ctx context.Context, mimeType string) error {
+	if s.allowAll {
+		return nil
+	}
+
+	_, ok := s.allowed[mimeType]
+	if !ok {
+		return core.ErrMimeTypeNotAllowed
+	}
+
+	return nil
+}
+
+func (s *mimeTypeService) dbMimeTypeIntoCore(m db.MimeType) *core.MimeType {
+	return &core.MimeType{
+		Extension: m.Extension,
+		MimeType:  m.MimeType,
+	}
+}
