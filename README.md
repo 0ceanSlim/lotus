@@ -14,6 +14,23 @@ A [Blossom](https://github.com/hzrd149/blossom) media server with a built-in web
 - Embedded SQLite migrations — no migration tooling needed
 - Single compiled binary, data-directory deployment model
 
+## Frontends
+
+Lotus ships with two reference frontends in the `frontends/` directory. The binary serves whatever is in `{data-dir}/web/` — there is no default frontend bundled in.
+
+| Frontend | Path | Description |
+|----------|------|-------------|
+| `gallery` | `frontends/gallery/` | Full gallery UI with infinite scroll, profile display, drag-and-drop upload, and My Media page. Actively developed. |
+| `0x0` | `frontends/0x0/` | Reference frontend for deployments backed by a self-hosted 0x0 instance. |
+
+Copy the one you want into your data directory:
+
+```sh
+cp -r frontends/gallery /your/data-dir/web
+```
+
+You can also bring your own frontend entirely. The server just needs `web/scripts/`, `web/res/`, and Go template HTML files under `web/views/`. Nothing is hardcoded in the binary.
+
 ## Quick Start
 
 ### 1. Build
@@ -27,10 +44,9 @@ go build -o bin/lotus ./cmd/lotus/
 ### 2. Create a data directory
 
 ```sh
-mkdir -p ~/.blossom/web
+mkdir -p ~/.blossom
+cp -r frontends/gallery ~/.blossom/web
 ```
-
-Copy or symlink your frontend files into `~/.blossom/web/`. The server expects `web/scripts/`, `web/res/`, and HTML templates inside that directory.
 
 ### 3. Write a config
 
@@ -140,7 +156,6 @@ data-dir/
 ## Roadmap
 
 - **Gallery improvements** — filtering, search, pagination in the web UI
-- **Upload UI** — drag-and-drop upload interface in the frontend
 - **Performance** — response caching, connection pooling, range request optimizations
 - **Outbox model** — once the [Grain](https://github.com/0ceanSlim/grain) client library matures, integrate the Nostr outbox model for relay-aware profile and content resolution
 - **Admin UI** — pubkey management, ACR editor, storage stats dashboard in the frontend
