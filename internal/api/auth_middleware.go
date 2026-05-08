@@ -57,7 +57,7 @@ func nostrAuthMiddleware(action string, log *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		if ev.CreatedAt.Time().Unix() > time.Now().Unix() {
+		if ev.CreatedAt.Time().Unix() > time.Now().Unix()+60 {
 			log.Debug("[nostrAuthMiddleware] invalid created_at")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return

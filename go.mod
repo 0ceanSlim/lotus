@@ -4,10 +4,8 @@ go 1.24.1
 
 toolchain go1.24.10
 
-replace github.com/0ceanslim/grain => ../grain
-
 require (
-	github.com/0ceanslim/grain v0.4.12
+	github.com/0ceanslim/grain v0.6.0
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/gabriel-vasile/mimetype v1.4.3
@@ -17,7 +15,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/rubenv/sql-migrate v1.6.1
-	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -29,7 +26,6 @@ require (
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/coder/websocket v1.8.12 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
@@ -47,7 +43,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.0 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
