@@ -1,0 +1,77 @@
+{{define "title"}}Gallery{{end}}
+
+{{define "view"}}
+<!-- Promo Banner -->
+<div class="bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-500/30 rounded-xl p-4 mb-6 text-center">
+  <p class="text-white/90">
+    <span class="font-semibold">Get 8GB of Blossom storage + a relay + NIP-05 verification</span>
+    <a href="https://happytavern.co/nostr-verified" target="_blank" class="ml-2 inline-block bg-pink-500 hover:bg-pink-600 text-white px-4 py-1 rounded-lg transition font-medium">
+      Get Started →
+    </a>
+  </p>
+</div>
+
+<!-- Server Stats -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+  <div class="bg-white/15 backdrop-blur-lg rounded-xl p-6 text-center border border-white/20">
+    <div class="text-4xl font-bold mb-2" id="total-storage">-</div>
+    <div class="text-sm text-white/80 uppercase tracking-wider">Total Storage</div>
+  </div>
+  <div class="bg-white/15 backdrop-blur-lg rounded-xl p-6 text-center border border-white/20">
+    <div class="text-4xl font-bold mb-2" id="total-blobs">-</div>
+    <div class="text-sm text-white/80 uppercase tracking-wider">Total Files</div>
+  </div>
+  <div class="bg-white/15 backdrop-blur-lg rounded-xl p-6 text-center border border-white/20">
+    <div class="text-4xl font-bold mb-2" id="total-users">-</div>
+    <div class="text-sm text-white/80 uppercase tracking-wider">Users</div>
+  </div>
+</div>
+
+<!-- Current Info -->
+<div class="text-center mb-6 text-white/90">
+  <span id="current-page-info">Loading...</span>
+</div>
+
+<!-- Error Container -->
+<div id="error-container"></div>
+
+<!-- Gallery Grid -->
+<div id="gallery" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8"></div>
+
+<!-- Loading Indicator -->
+<div id="loading" class="text-center py-12 text-white/80">
+  <div class="spinner mx-auto mb-4" style="display: block;"></div>
+  <p>Loading media...</p>
+</div>
+
+<!-- End of Content -->
+<div id="end-message" class="hidden text-center py-8 text-white/60">
+  <p>You've reached the end of the gallery</p>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onclick="closeModal()">
+  <button onclick="closeModal()" class="absolute top-4 right-4 bg-white hover:bg-gray-200 text-black px-4 py-2 rounded-lg transition">
+    Close
+  </button>
+  <img id="modal-content" class="max-w-full max-h-full object-contain" />
+</div>
+
+<script src="/scripts/pages/gallery.js?v=1732140003"></script>
+<script>
+// Initialize gallery when ready
+function safeInitGallery() {
+  if (typeof initGallery === 'function' && document.getElementById('gallery')) {
+    initGallery();
+  } else {
+    setTimeout(safeInitGallery, 100);
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', safeInitGallery);
+} else {
+  setTimeout(safeInitGallery, 10);
+}
+</script>
+{{end}}

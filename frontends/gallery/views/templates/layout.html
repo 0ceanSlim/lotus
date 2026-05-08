@@ -1,0 +1,117 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{.Theme}}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/res/favicon.svg" />
+    <!-- Tailwind CSS (using CDN for now) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- htmx for SPA navigation -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- QR Code library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Nostr-tools for event signing (bundled version) -->
+    <script src="https://unpkg.com/nostr-tools@2.1.0/lib/nostr.bundle.js"></script>
+    <!-- <link href="/res/style/output.css" rel="stylesheet" /> -->
+    <style>
+      .spinner {
+        display: none;
+        width: 32px;
+        height: 32px;
+        border: 5px solid #667eea;
+        border-top: 5px solid #764ba2;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <title>{{template "title"}} - {{.Title}}</title>
+  </head>
+  <body class="min-h-screen flex flex-col bg-gradient-to-br from-purple-600 to-purple-900 text-white" hx-ext="head-support">
+    {{template "header" .}}
+    <main id="main-content" class="flex-grow container mx-auto px-4 py-8" hx-history-elt>
+      {{template "view" .}}
+    </main>
+    {{template "footer" .}}
+
+    <!-- Modals at body level to escape header stacking context -->
+    {{template "login-modal"}}
+    {{template "upload-modal"}}
+
+    <!-- Core scripts loaded after htmx is ready -->
+    <script>
+    function waitForHTMX() {
+      if (typeof htmx !== 'undefined' && htmx.version) {
+        console.log('🚀 HTMX ready, version:', htmx.version, '- loading core scripts sequentially...');
+
+        // Load scripts sequentially (each depends on previous)
+        const scripts = [
+          '/scripts/core/utils.js?v=1732140003',
+          '/scripts/core/session-manager.js?v=1732140003',
+          '/scripts/core/relay-manager.js?v=1732140003',
+          '/scripts/core/blossom-signer.js?v=1732140003',
+          '/scripts/systems/profile-manager.js?v=1732140003',
+          '/scripts/core/auth.js?v=1732140003',
+          '/scripts/pages/upload.js?v=1732140003'
+        ];
+
+        // Sequential loader function
+        function loadScriptSequentially(index) {
+          if (index >= scripts.length) {
+            console.log('✅ All core scripts loaded');
+            document.dispatchEvent(new Event('coreScriptsLoaded'));
+            return;
+          }
+
+          const script = document.createElement('script');
+          script.src = scripts[index];
+          script.onload = () => {
+            console.log('✅ Loaded:', scripts[index]);
+            loadScriptSequentially(index + 1);
+          };
+          script.onerror = (e) => {
+            console.error('❌ Failed to load:', scripts[index], e);
+            // Continue loading remaining scripts
+            loadScriptSequentially(index + 1);
+          };
+          document.head.appendChild(script);
+        }
+
+        // Start loading from first script
+        loadScriptSequentially(0);
+      } else {
+        setTimeout(waitForHTMX, 50);
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', waitForHTMX);
+    } else {
+      waitForHTMX();
+    }
+
+    // Update navigation after htmx content swaps
+    document.body.addEventListener('htmx:afterSettle', function(event) {
+      if (event.detail.target.id === 'main-content') {
+        console.log('🔄 Content settled, updating navigation...');
+        // Update auth UI state
+        if (typeof updateLoginButton === 'function') {
+          setTimeout(() => updateLoginButton(), 100);
+        } else if (typeof updateAuthUI === 'function') {
+          setTimeout(() => updateAuthUI(), 100);
+        }
+      }
+    });
+    </script>
+  </body>
+</html>
+{{end}}

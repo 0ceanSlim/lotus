@@ -1,0 +1,39 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/res/favicon.svg" />
+  <title>0x0 // happytavern</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: clamp(14px, 1.8vw, 17px);
+      font-weight: 600;
+      line-height: 1.7;
+      min-height: 100vh;
+      padding: clamp(1rem, 4vw, 3rem) clamp(1rem, 5vw, 4rem);
+    }
+
+    a { color: #fff; }
+    a:hover { text-decoration: none; }
+
+    #wrap {
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    {{template "view" .}}
+  </div>
+</body>
+</html>
+{{end}}

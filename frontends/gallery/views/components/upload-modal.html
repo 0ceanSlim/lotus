@@ -1,0 +1,52 @@
+{{define "upload-modal"}}
+<div id="upload-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onclick="handleUploadOverlayClick(event)">
+  <div class="bg-gray-900 border border-purple-500/50 rounded-xl p-6 w-full max-w-md relative" onclick="event.stopPropagation()">
+    <button onclick="closeUploadModal()" class="absolute top-3 right-4 text-white/40 hover:text-white text-xl leading-none">&times;</button>
+    <h2 class="text-lg font-bold mb-5">Upload File</h2>
+
+    <!-- Drop zone -->
+    <div id="upload-drop-zone"
+         class="border-2 border-dashed border-purple-500/40 rounded-xl p-8 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-500/10 transition mb-4"
+         onclick="document.getElementById('upload-file-input').click()"
+         ondragover="event.preventDefault(); this.classList.add('border-purple-400','bg-purple-500/10')"
+         ondragleave="this.classList.remove('border-purple-400','bg-purple-500/10')"
+         ondrop="handleUploadDrop(event)">
+      <div id="upload-drop-content">
+        <div class="text-4xl mb-2">📁</div>
+        <p class="text-white/60 text-sm">Drag &amp; drop a file or click to browse</p>
+      </div>
+    </div>
+    <input id="upload-file-input" type="file" class="hidden" onchange="handleUploadFileSelect(event)">
+
+    <!-- File info -->
+    <div id="upload-file-info" class="hidden bg-white/5 border border-white/10 rounded-lg px-3 py-2 mb-4 text-sm">
+      <div class="font-medium truncate" id="upload-file-name"></div>
+      <div class="text-white/50 text-xs mt-0.5" id="upload-file-meta"></div>
+    </div>
+
+    <!-- Progress -->
+    <div id="upload-progress" class="hidden mb-4">
+      <div class="flex justify-between text-xs text-white/60 mb-1">
+        <span id="upload-status-text">Uploading...</span>
+      </div>
+      <div class="w-full bg-white/10 rounded-full h-1.5">
+        <div id="upload-progress-bar" class="bg-purple-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div id="upload-result" class="hidden mb-4"></div>
+
+    <!-- Actions -->
+    <div class="flex gap-3">
+      <button onclick="closeUploadModal()" class="flex-1 px-4 py-2 rounded-lg border border-white/20 hover:bg-white/10 transition text-sm">
+        Cancel
+      </button>
+      <button id="upload-submit-btn" onclick="submitUpload()" disabled
+              class="flex-1 px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 transition text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+        Upload
+      </button>
+    </div>
+  </div>
+</div>
+{{end}}

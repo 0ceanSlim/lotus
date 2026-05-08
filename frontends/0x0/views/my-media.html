@@ -1,0 +1,96 @@
+{{define "title"}}My Media{{end}}
+
+{{define "view"}}
+<div class="max-w-7xl mx-auto">
+  <!-- Stats Section -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold mb-6">📊 My Storage</h1>
+
+    <div id="stats-loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+    </div>
+
+    <div id="stats-container" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <!-- Total Storage Used -->
+      <div class="bg-white/10 backdrop-blur-md rounded-lg p-6">
+        <div class="text-sm text-gray-300 mb-1">Storage Used</div>
+        <div class="text-2xl font-bold" id="storage-used">-</div>
+        <div class="text-xs text-gray-400 mt-1" id="storage-quota">of -</div>
+      </div>
+
+      <!-- File Count -->
+      <div class="bg-white/10 backdrop-blur-md rounded-lg p-6">
+        <div class="text-sm text-gray-300 mb-1">Total Files</div>
+        <div class="text-2xl font-bold" id="file-count">-</div>
+      </div>
+
+      <!-- Storage Percentage -->
+      <div class="bg-white/10 backdrop-blur-md rounded-lg p-6">
+        <div class="text-sm text-gray-300 mb-1">Quota Usage</div>
+        <div class="text-2xl font-bold" id="storage-percent">-%</div>
+        <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
+          <div id="storage-bar" class="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Most Common Type -->
+      <div class="bg-white/10 backdrop-blur-md rounded-lg p-6">
+        <div class="text-sm text-gray-300 mb-1">Most Common</div>
+        <div class="text-2xl font-bold" id="common-type">-</div>
+        <div class="text-xs text-gray-400 mt-1" id="common-count">- files</div>
+      </div>
+    </div>
+
+    <!-- File Types Breakdown -->
+    <div id="file-types-container" class="hidden bg-white/10 backdrop-blur-md rounded-lg p-6">
+      <h2 class="text-xl font-bold mb-4">📁 File Types</h2>
+      <div id="file-types-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Media Grid Section -->
+  <div>
+    <h1 class="text-3xl font-bold mb-6">🖼️ My Media</h1>
+
+    <div id="media-loading" class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+    </div>
+
+    <div id="no-media" class="hidden text-center py-12">
+      <div class="text-6xl mb-4">📦</div>
+      <p class="text-xl text-gray-300">No media uploaded yet</p>
+      <a href="/" class="inline-block mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-6 py-2 rounded-lg font-medium transition-all">
+        Upload Your First File
+      </a>
+    </div>
+
+    <div id="media-grid" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <!-- Populated by JavaScript -->
+    </div>
+  </div>
+</div>
+
+<script src="/scripts/pages/user-media.js?v=1732100004"></script>
+<script>
+// Safe initialization pattern - retry until ready
+function safeInitializeMyMedia() {
+  // Check if function exists AND DOM elements exist
+  if (typeof initMyMediaPage === 'function' &&
+      document.getElementById('media-grid') &&
+      document.getElementById('media-loading')) {
+    initMyMediaPage();
+  } else {
+    setTimeout(safeInitializeMyMedia, 100);
+  }
+}
+
+// Handle both initial load and htmx navigation
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', safeInitializeMyMedia);
+} else {
+  setTimeout(safeInitializeMyMedia, 10);
+}
+</script>
+{{end}}

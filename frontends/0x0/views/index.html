@@ -1,0 +1,287 @@
+{{define "title"}}0x0{{end}}
+
+{{define "view"}}
+<style>
+  pre { font-family: inherit; }
+
+  .dim    { color: #777; }
+  .line   { border-top: 1px solid #333; margin: 1.8rem 0; }
+
+  #drop-zone {
+    border: 1px solid #444;
+    padding: 2.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    margin: 1.5rem 0;
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: #fff;
+    color: #fff;
+  }
+  #drop-zone .label { color: #999; font-size: 13px; margin-top: 0.5rem; }
+
+  #file-input { display: none; }
+
+  #status {
+    margin: 1rem 0;
+    min-height: 1.4rem;
+    font-size: 13px;
+  }
+  #status.err  { color: #f55; }
+  #status.ok   { color: #5f5; }
+  #status.info { color: #bbb; }
+
+  #result {
+    display: none;
+    margin: 1.5rem 0;
+    border: 1px solid #333;
+    padding: 1.2rem;
+  }
+  #result-label { color: #888; font-size: 12px; margin-bottom: 0.4rem; }
+  #result-url {
+    word-break: break-all;
+    margin-bottom: 1rem;
+    font-size: 13px;
+  }
+
+  #copy-btn {
+    background: none;
+    border: 1px solid #555;
+    color: #fff;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0.3rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  #copy-btn:hover { border-color: #fff; }
+
+  #progress-bar-wrap {
+    display: none;
+    height: 2px;
+    background: #222;
+    margin: 0.6rem 0;
+  }
+  #progress-bar {
+    height: 100%;
+    background: #fff;
+    width: 0%;
+    transition: width 0.1s;
+  }
+
+  .ext-notice {
+    margin-top: 1.2rem;
+    font-size: 12px;
+    color: #888;
+  }
+</style>
+
+<p style="font-size:clamp(4rem,12vw,9rem); font-weight:900; line-height:1; letter-spacing:-2px;">0x0</p>
+<p style="color:#888; font-size:12px; margin-top:0.6rem;">0x0.happytavern.co &mdash; ephemeral blossom storage &mdash; files expire, links work until they don't</p>
+
+<div class="line"></div>
+
+<p>drop a file. sign once with your nostr key. get a link.</p>
+<p class="dim" style="margin-top:0.4rem;">any nostr key works. nothing here is permanent. that's the point.</p>
+
+<div class="line"></div>
+
+<pre style="color:#888; font-size:12px; line-height:1.4;">
+RETENTION CURVE  (days vs. file size)
+
+  90 ┤╮
+     │ \
+  75 ┤  \
+     │   \
+  60 ┤    \
+     │     \
+  45 ┤      \__
+     │          \___
+  30 ┤               ────────
+     └────────────────────────
+    0MB        25MB        50MB
+
+  tiny file  (~1MB)   ≈ 87 days
+  medium     (~10MB)  ≈ 61 days
+  large      (~30MB)  ≈ 34 days
+  max        ( 50MB)  = 30 days
+</pre>
+
+<div class="line"></div>
+
+<div id="drop-zone" onclick="document.getElementById('file-input').click()">
+  <div id="drop-label">[ drop file here or click to browse ]</div>
+  <div class="label">max 50 MB per file &nbsp;·&nbsp; 100 MB per key</div>
+</div>
+<input type="file" id="file-input" />
+
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+<div id="status" class="dim">waiting for file...</div>
+
+<div id="result">
+  <div id="result-label">link</div>
+  <div id="result-url"></div>
+  <button id="copy-btn" onclick="copyUrl()">copy</button>
+</div>
+
+<div class="ext-notice">
+  requires a nostr browser extension (
+  <a href="https://getalby.com" target="_blank">alby</a>,
+  <a href="https://github.com/fiatjaf/nos2x" target="_blank">nos2x</a>, etc.)
+  or any nip-07 signer
+</div>
+
+<div class="line"></div>
+<p style="font-size:12px; color:#888; line-height:2;">
+  storage protocol &mdash;
+  <a href="https://0x0.st" target="_blank">0x0.st</a>
+  by <a href="https://git.0x0.st/mia" target="_blank">mia</a>
+  (self-hosted instance)
+  <br>
+  blossom layer &mdash;
+  <a href="https://github.com/hzrd149/blossom" target="_blank">blossom protocol</a>
+  <br>
+  need persistent storage? &mdash;
+  <a href="https://happytavern.co/nostr-verified" target="_blank">happytavern.co</a>
+</p>
+
+<script>
+(function () {
+  const dropZone  = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const status    = document.getElementById('status');
+  const result    = document.getElementById('result');
+  const resultUrl = document.getElementById('result-url');
+  const progressWrap = document.getElementById('progress-bar-wrap');
+  const progressBar  = document.getElementById('progress-bar');
+
+  function setStatus(msg, type) {
+    status.textContent = msg;
+    status.className = type || 'dim';
+  }
+
+  function showResult(url) {
+    resultUrl.textContent = url;
+    result.style.display = 'block';
+  }
+
+  function copyUrl() {
+    navigator.clipboard.writeText(resultUrl.textContent).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'copied!';
+      setTimeout(() => btn.textContent = 'copy', 1500);
+    });
+  }
+  window.copyUrl = copyUrl;
+
+  // Drag and drop
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) handleFile(fileInput.files[0]);
+  });
+
+  async function sha256hex(buffer) {
+    const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  async function handleFile(file) {
+    result.style.display = 'none';
+    progressWrap.style.display = 'none';
+    progressBar.style.width = '0%';
+
+    if (file.size > 50 * 1024 * 1024) {
+      setStatus('file too large. max 50 MB.', 'err');
+      return;
+    }
+
+    if (!window.nostr) {
+      setStatus('no nostr extension found. install alby or nos2x.', 'err');
+      return;
+    }
+
+    setStatus('hashing file...', 'info');
+
+    let buffer;
+    try {
+      buffer = await file.arrayBuffer();
+    } catch (e) {
+      setStatus('could not read file: ' + e.message, 'err');
+      return;
+    }
+
+    const hash = await sha256hex(buffer);
+    setStatus('signing auth event...', 'info');
+
+    const expiration = Math.floor(Date.now() / 1000) + 300; // 5 min
+    const authEvent = {
+      kind: 24242,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', 'upload'],
+        ['x', hash],
+        ['expiration', expiration.toString()]
+      ],
+      content: ''
+    };
+
+    let signedEvent;
+    try {
+      signedEvent = await window.nostr.signEvent(authEvent);
+    } catch (e) {
+      setStatus('signing cancelled or failed: ' + e.message, 'err');
+      return;
+    }
+
+    const authHeader = 'Nostr ' + btoa(JSON.stringify(signedEvent));
+
+    setStatus('uploading...', 'info');
+    progressWrap.style.display = 'block';
+
+    // XHR for upload progress
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', '/upload');
+      xhr.setRequestHeader('Authorization', authHeader);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          progressBar.style.width = Math.round((e.loaded / e.total) * 100) + '%';
+        }
+      };
+
+      xhr.onload = () => {
+        progressBar.style.width = '100%';
+        if (xhr.status === 200 || xhr.status === 201) {
+          try {
+            const resp = JSON.parse(xhr.responseText);
+            setStatus('done.', 'ok');
+            showResult(resp.url);
+            resolve();
+          } catch (e) {
+            setStatus('upload succeeded but response unparseable', 'err');
+            resolve();
+          }
+        } else {
+          let msg = xhr.responseText;
+          try { msg = JSON.parse(msg).message; } catch(_) {}
+          setStatus('upload failed: ' + msg, 'err');
+          reject();
+        }
+      };
+
+      xhr.onerror = () => { setStatus('network error', 'err'); reject(); };
+      xhr.send(new Blob([buffer], { type: file.type }));
+    }).catch(() => {});
+  }
+})();
+</script>
+{{end}}

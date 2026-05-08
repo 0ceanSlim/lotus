@@ -1,0 +1,13 @@
+{{define "header"}}
+<header class="bg-white/10 backdrop-blur-md sticky top-0 z-50 border-b border-white/20">
+  <div class="container mx-auto px-4 py-4">
+    <div class="flex items-center justify-between">
+      <!-- Left: App Name -->
+      {{template "app-name"}}
+
+      <!-- Right: Login/Profile -->
+      {{template "nav-play" .}}
+    </div>
+  </div>
+</header>
+{{end}}

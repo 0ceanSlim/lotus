@@ -1,0 +1,137 @@
+{{define "title"}}Settings{{end}}
+
+{{define "view"}}
+<div class="max-w-5xl mx-auto">
+  <h1 class="text-3xl font-bold mb-6">⚙️ Settings</h1>
+
+  <!-- Index Relays -->
+  <div class="mb-8 bg-white/10 backdrop-blur-md rounded-lg p-6">
+    <h2 class="text-xl font-semibold text-white mb-3 flex items-center gap-2">
+      🗂️ Index Relays
+      <span class="text-sm text-gray-400 font-normal">(Used to fetch profile & mailbox data)</span>
+    </h2>
+    <p class="text-sm text-gray-400 mb-4">These relays are used to discover your profile (kind 0) and mailbox preferences (kind 10002).</p>
+
+    <div id="index-relays-list" class="space-y-2 mb-4">
+      <!-- Populated by JavaScript -->
+    </div>
+
+    <div class="flex gap-2">
+      <input
+        type="text"
+        id="new-index-relay"
+        placeholder="wss://relay.example.com"
+        class="flex-1 bg-gray-800 text-white px-4 py-2 rounded border border-gray-600 focus:border-purple-400 focus:outline-none"
+      />
+      <button
+        onclick="addIndexRelay()"
+        class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded font-medium transition"
+      >
+        Add
+      </button>
+    </div>
+  </div>
+
+  <!-- User Relays (Mailboxes) -->
+  <div class="mb-8 bg-white/10 backdrop-blur-md rounded-lg p-6">
+    <h2 class="text-xl font-semibold text-white mb-3 flex items-center gap-2">
+      📬 User Relays (Mailboxes)
+      <span class="text-sm text-gray-400 font-normal">(From your kind 10002 event)</span>
+    </h2>
+    <p class="text-sm text-gray-400 mb-4">These are fetched from your Nostr profile and cannot be edited here. Update your kind 10002 event to change these.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Read Relays -->
+      <div>
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Read</h3>
+        <div id="user-read-list" class="space-y-1 text-sm">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Write Relays -->
+      <div>
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Write</h3>
+        <div id="user-write-list" class="space-y-1 text-sm">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Both Relays -->
+      <div>
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Both</h3>
+        <div id="user-both-list" class="space-y-1 text-sm">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Relays -->
+  <div class="mb-8 bg-white/10 backdrop-blur-md rounded-lg p-6">
+    <h2 class="text-xl font-semibold text-white mb-3 flex items-center gap-2">
+      📡 App Relays
+      <span class="text-sm text-gray-400 font-normal">(Active for this session)</span>
+    </h2>
+    <p class="text-sm text-gray-400 mb-4">These are the relays actually used by the app during this session. They start as a copy of your mailboxes but can be customized.</p>
+
+    <div id="app-relays-list" class="space-y-2 mb-4">
+      <!-- Populated by JavaScript -->
+    </div>
+
+    <div class="flex gap-2 mb-3">
+      <input
+        type="text"
+        id="new-app-relay"
+        placeholder="wss://relay.example.com"
+        class="flex-1 bg-gray-800 text-white px-4 py-2 rounded border border-gray-600 focus:border-purple-400 focus:outline-none"
+      />
+      <button
+        onclick="addAppRelay()"
+        class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded font-medium transition"
+      >
+        Add
+      </button>
+    </div>
+
+    <button
+      onclick="resetAppRelays()"
+      class="w-full bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded font-medium transition"
+    >
+      🔄 Reset to Mailboxes
+    </button>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="bg-white/10 backdrop-blur-md rounded-lg p-6">
+    <h2 class="text-xl font-semibold text-white mb-3">
+      📊 Connection Status
+    </h2>
+    <div id="connection-status" class="text-sm">
+      <!-- Populated by JavaScript -->
+    </div>
+  </div>
+</div>
+
+<script src="/scripts/pages/settings.js?v=1732100004"></script>
+<script>
+// Safe initialization pattern - retry until ready
+function safeInitializeSettings() {
+  // Check if function exists AND DOM elements exist
+  if (typeof initSettingsPage === 'function' &&
+      document.getElementById('index-relays-list') &&
+      document.getElementById('app-relays-list')) {
+    initSettingsPage();
+  } else {
+    setTimeout(safeInitializeSettings, 100);
+  }
+}
+
+// Handle both initial load and htmx navigation
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', safeInitializeSettings);
+} else {
+  setTimeout(safeInitializeSettings, 10);
+}
+</script>
+{{end}}

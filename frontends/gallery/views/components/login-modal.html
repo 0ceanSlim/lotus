@@ -1,0 +1,257 @@
+{{define "login-modal"}}
+<!-- Login Modal - Rendered at body level to escape header stacking context -->
+<div
+  id="login-modal"
+  class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4"
+  style="background-color: rgba(0, 0, 0, 0.75);"
+  onclick="if(event.target === this) hideLoginModal()"
+>
+  <div
+    class="bg-gray-800 border border-purple-500 rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto"
+    onclick="event.stopPropagation()"
+  >
+    <div class="p-6">
+      <div class="text-center mb-4">
+        <h2 class="text-2xl font-bold mb-1 text-purple-400">Connect to Nostr</h2>
+        <p class="text-sm text-gray-400">Choose how you'd like to authenticate</p>
+      </div>
+
+      <div id="auth-result" class="mb-4"></div>
+
+      <div class="space-y-3 mb-4">
+        <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+          <div class="flex items-start gap-3">
+            <div class="text-3xl">✨</div>
+            <div class="flex-1">
+              <h4 class="font-bold mb-1 text-sm text-white">New to Nostr?</h4>
+              <p class="text-xs text-gray-400 mb-2">Generate a new keypair to get started</p>
+              <button onclick="generateNewKeys()" class="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm w-full transition-colors">
+                Generate Keys
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+          <div class="flex items-start gap-3">
+            <div class="text-3xl">🔗</div>
+            <div class="flex-1">
+              <h4 class="font-bold mb-1 text-sm text-white">Browser Extension</h4>
+              <p class="text-xs text-gray-400 mb-2">Use Alby, nos2x, or other Nostr extensions</p>
+              <button onclick="loginWithExtension()" class="bg-purple-600 hover:bg-purple-700 px-3 py-1.5 rounded text-sm w-full transition-colors">
+                Connect Extension
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+          <div class="flex items-start gap-3">
+            <div class="text-3xl">📱</div>
+            <div class="flex-1">
+              <h4 class="font-bold mb-1 text-sm text-white">Amber Signer</h4>
+              <p class="text-xs text-gray-400 mb-2">Login with Amber app on Android</p>
+              <button onclick="showAmberOptions()" class="bg-orange-600 hover:bg-orange-700 px-3 py-1.5 rounded text-sm w-full transition-colors">
+                Amber Options
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+          <div class="flex items-start gap-3">
+            <div class="text-3xl">🗝️</div>
+            <div class="flex-1">
+              <h4 class="font-bold mb-1 text-sm text-white">Private Key</h4>
+              <p class="text-xs text-gray-400 mb-2">Login with your nsec or hex private key</p>
+              <button onclick="showPrivateKeyForm()" class="bg-yellow-600 hover:bg-yellow-700 text-gray-900 px-3 py-1.5 rounded text-sm w-full transition-colors">
+                Enter Key
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-xs text-center mb-4 text-gray-500">
+        <p>Your keys are never sent to our servers</p>
+      </div>
+
+      <button onclick="hideLoginModal()" class="w-full bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Private Key Modal -->
+<div
+  id="private-key-modal"
+  class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4"
+  style="background-color: rgba(0, 0, 0, 0.75);"
+  onclick="if(event.target === this) hidePrivateKeyForm()"
+>
+  <div class="bg-gray-800 border border-purple-500 rounded-lg w-full max-w-md" onclick="event.stopPropagation()">
+    <div class="p-6">
+      <h3 class="text-xl font-bold mb-4 text-center text-purple-400">Private Key</h3>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-2 text-gray-300">Private Key</label>
+          <input type="password" id="private-key-modal-input" class="w-full bg-gray-700 px-3 py-2 rounded border border-gray-600 focus:border-purple-400 focus:outline-none font-mono text-sm" placeholder="nsec1... or hex private key" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2 text-gray-300">Encryption Password</label>
+          <input type="password" id="encryption-password-modal-input" class="w-full bg-gray-700 px-3 py-2 rounded border border-gray-600 focus:border-purple-400 focus:outline-none text-sm" placeholder="Password to encrypt your key" onkeypress="if(event.key === 'Enter') loginWithPrivateKeyAndPassword()" />
+        </div>
+        <div class="flex gap-3">
+          <button onclick="loginWithPrivateKeyAndPassword()" class="flex-1 bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium transition-colors">Login</button>
+          <button onclick="hidePrivateKeyForm()" class="flex-1 bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg font-medium transition-colors">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Generated Keys Modal -->
+<div
+  id="generated-keys-modal"
+  class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4"
+  style="background-color: rgba(0, 0, 0, 0.75);"
+  onclick="if(event.target === this) hideGeneratedKeys()"
+>
+  <div class="bg-gray-800 border border-purple-500 rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+    <div class="p-6">
+      <h3 class="text-xl font-bold mb-4 text-center text-purple-400">New Keys Generated!</h3>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-bold mb-2 text-purple-400">Public Key (npub)</label>
+          <div class="flex gap-2">
+            <div class="flex-1 bg-gray-900 p-2 text-xs font-mono break-all rounded border border-gray-700 text-purple-300 max-h-16 overflow-y-auto" id="gen-npub"></div>
+            <button onclick="copyToClipboard('gen-npub', 'Public key')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm flex-shrink-0 transition-colors">Copy</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-bold mb-2 text-red-400">Private Key (nsec)</label>
+          <div class="flex gap-2">
+            <div class="flex-1 bg-gray-900 p-2 text-xs font-mono break-all rounded border border-red-900 text-red-400 max-h-16 overflow-y-auto" id="gen-nsec"></div>
+            <button onclick="copyToClipboard('gen-nsec', 'Private key')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm flex-shrink-0 transition-colors">Copy</button>
+          </div>
+        </div>
+        <div class="bg-red-900/50 border border-red-500 p-3 rounded text-sm">
+          <p class="font-bold text-red-200 mb-1">SAVE YOUR PRIVATE KEY!</p>
+          <p class="text-red-300 text-xs">This is the ONLY way to access your account. It cannot be recovered.</p>
+        </div>
+        <div class="flex gap-3">
+          <button onclick="useGeneratedKeys()" class="flex-1 bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium transition-colors">I Saved It - Continue</button>
+          <button onclick="hideGeneratedKeys()" class="flex-1 bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg font-medium transition-colors">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Encryption Password Modal -->
+<div
+  id="encryption-password-modal"
+  class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4"
+  style="background-color: rgba(0, 0, 0, 0.75);"
+  onclick="if(event.target === this) cancelEncryptionPassword()"
+>
+  <div class="bg-gray-800 border border-purple-500 rounded-lg w-full max-w-md" onclick="event.stopPropagation()">
+    <div class="p-6">
+      <h3 class="text-xl font-bold mb-4 text-center text-purple-400">Secure Your Session</h3>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-2 text-gray-300">Set Encryption Password</label>
+          <input type="password" id="gen-encryption-password-input" class="w-full bg-gray-700 px-3 py-2 rounded border border-gray-600 focus:border-purple-400 focus:outline-none" placeholder="Enter password for this session" onkeypress="if(event.key === 'Enter') loginWithGeneratedKeys()" />
+        </div>
+        <div class="flex gap-3">
+          <button onclick="loginWithGeneratedKeys()" class="flex-1 bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium transition-colors">Continue</button>
+          <button onclick="cancelEncryptionPassword()" class="flex-1 bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg font-medium transition-colors">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Modal -->
+<div
+  id="loading-modal"
+  class="hidden fixed inset-0 z-[110] flex items-center justify-center"
+  style="background-color: rgba(0, 0, 0, 0.75);"
+>
+  <div class="bg-gray-800 border border-purple-500 rounded-lg p-8 text-center">
+    <div class="flex justify-center mb-4">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+    </div>
+    <p id="loading-text" class="text-lg font-bold mb-4">Loading...</p>
+    <button onclick="hideLoadingModal()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm transition-colors">Cancel</button>
+  </div>
+</div>
+
+<!-- Amber Options Modal -->
+<div
+  id="amber-options-modal"
+  class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4"
+  style="background-color: rgba(0, 0, 0, 0.75);"
+  onclick="if(event.target === this) hideAmberOptions()"
+>
+  <div class="bg-gray-800 border border-orange-500 rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+    <div class="p-6">
+      <h3 class="text-xl font-bold mb-4 text-center text-orange-400">Amber Signer</h3>
+      <p class="text-sm text-center mb-4 text-gray-400">Choose your login method</p>
+
+      <!-- Direct Button (for mobile) -->
+      <div class="mb-4">
+        <button
+          onclick="loginWithAmber()"
+          class="w-full bg-orange-600 hover:bg-orange-700 px-4 py-3 rounded-lg font-medium transition-colors"
+        >
+          📱 Open Amber Directly
+        </button>
+        <p class="text-xs text-center mt-2 text-gray-500">Use this if you're on Android with Amber installed</p>
+      </div>
+
+      <div class="text-center text-xs mb-4 text-gray-500">— OR —</div>
+
+      <!-- Bunker Connection (for desktop) -->
+      <div class="mb-4">
+        <h4 class="text-sm font-bold mb-2 text-white">Nostr Connect (Desktop → Mobile)</h4>
+        <p class="text-xs text-gray-400 mb-3">Scan with Amber on your phone to login on this device</p>
+
+        <!-- QR Code Display -->
+        <div id="bunker-qr-container" class="hidden mb-3 flex justify-center">
+          <div class="bg-white p-3 rounded-lg">
+            <div id="bunker-qr-code"></div>
+          </div>
+        </div>
+
+        <div id="bunker-status" class="mb-3 p-2 bg-yellow-900/50 border border-yellow-600 rounded text-center">
+          <p class="text-xs text-yellow-200" id="bunker-status-text">⚠️ Note: Relay listener not yet implemented. Use "Open Amber Directly" on mobile for now.</p>
+        </div>
+
+        <div id="bunker-string-container" class="hidden mb-3">
+          <div class="flex gap-2">
+            <input
+              type="text"
+              id="bunker-connection-string"
+              readonly
+              class="flex-1 bg-gray-900 px-3 py-2 rounded border border-gray-700 font-mono text-xs"
+              placeholder="nostrconnect://..."
+            />
+            <button
+              onclick="copyBunkerString()"
+              class="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded text-sm transition-colors"
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="hideAmberOptions()" class="w-full bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+{{end}}

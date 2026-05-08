@@ -1,0 +1,717 @@
+{{define "nav-play"}}
+<!-- Login/Profile Button -->
+<button
+  id="login-btn"
+  onclick="handleLoginClick()"
+  class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-4 py-2 rounded-lg font-medium transition-all transform hover:scale-105 flex items-center gap-2"
+  title="Login"
+>
+  <span id="login-btn-content" class="flex items-center gap-2">
+    Login
+  </span>
+</button>
+
+<script>
+// Global variable to store generated private key
+var generatedPrivateKey = null;
+var amberCallbackReceived = false;
+var bunkerConnectionString = null;
+
+// Show Amber options modal
+function showAmberOptions() {
+  hideLoginModal();
+  document.getElementById('amber-options-modal').classList.remove('hidden');
+  // Auto-generate bunker connection for desktop users
+  setTimeout(() => generateBunkerConnection(), 100);
+}
+
+// Hide Amber options modal
+function hideAmberOptions() {
+  document.getElementById('amber-options-modal').classList.add('hidden');
+  // Reset bunker state
+  document.getElementById('bunker-status-text').textContent = 'Click "Generate" to create connection';
+  document.getElementById('bunker-string-container').classList.add('hidden');
+  document.getElementById('bunker-qr-container').classList.add('hidden');
+  bunkerConnectionString = null;
+}
+
+// Generate bunker connection string for Nostr Connect
+async function generateBunkerConnection() {
+  const statusText = document.getElementById('bunker-status-text');
+  statusText.textContent = 'Generating connection...';
+
+  // Generate a random secret for this connection
+  const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Create bunker URL - this would normally connect to a relay
+  // For now, we'll create a nostrconnect:// URL format
+  const relays = ['wss://relay.nsec.app', 'wss://relay.damus.io'];
+  const relayParams = relays.map(r => `relay=${encodeURIComponent(r)}`).join('&');
+
+  bunkerConnectionString = `nostrconnect://${secret}?${relayParams}&name=${encodeURIComponent('Blossom Gallery')}`;
+
+  // Generate QR code
+  const qrContainer = document.getElementById('bunker-qr-code');
+  if (qrContainer && typeof QRCode !== 'undefined') {
+    try {
+      // Clear previous QR code
+      qrContainer.innerHTML = '';
+
+      // Create new QR code
+      new QRCode(qrContainer, {
+        text: bunkerConnectionString,
+        width: 200,
+        height: 200,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      document.getElementById('bunker-qr-container').classList.remove('hidden');
+      console.log('QR code generated successfully');
+    } catch (err) {
+      console.error('Failed to generate QR code:', err);
+    }
+  } else {
+    console.error('QR container or QRCode library not found');
+  }
+
+  // Show the connection string
+  document.getElementById('bunker-connection-string').value = bunkerConnectionString;
+  document.getElementById('bunker-string-container').classList.remove('hidden');
+  statusText.textContent = 'Scan QR or copy string into Amber';
+
+  // TODO: Set up listener for bunker connection response
+  // This would require WebSocket connection to the relay to listen for auth events
+  console.log('Bunker connection string generated:', bunkerConnectionString);
+}
+
+// Copy bunker connection string
+function copyBunkerString() {
+  const input = document.getElementById('bunker-connection-string');
+  if (input && input.value) {
+    navigator.clipboard.writeText(input.value).then(() => {
+      showMessage('Connection string copied!', 'success');
+    }).catch(() => {
+      showMessage('Failed to copy', 'error');
+    });
+  }
+}
+
+// Login with browser extension (NIP-07)
+async function loginWithExtension() {
+  if (!window.nostr) {
+    showAuthResult('error', 'No Nostr extension found. Please install Alby, nos2x, or another Nostr extension.');
+    return;
+  }
+
+  try {
+    showLoadingModal('Connecting to extension...');
+    showAuthResult('loading', 'Requesting public key from extension...');
+
+    const pubkey = await window.nostr.getPublicKey();
+    if (!pubkey) {
+      throw new Error('Extension did not return a public key');
+    }
+
+    showAuthResult('loading', 'Creating session...');
+
+    // Create session via API
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        public_key: pubkey,
+        signing_method: 'browser_extension',
+        mode: 'write'
+      })
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.message || 'Login failed');
+    }
+
+    // Initialize session manager with the new session
+    if (window.sessionManager) {
+      await window.sessionManager.checkExistingSession();
+    }
+
+    hideLoadingModal();
+    hideLoginModal();
+    showMessage('Connected via browser extension!', 'success');
+    updateLoginButton();
+
+    // Initialize profile and relay managers (non-blocking)
+    if (window.profileManager) {
+      window.profileManager.init(pubkey, data.npub, false).then(() => {
+        updateLoginButton();
+      }).catch(err => console.error('Profile fetch failed:', err));
+    }
+    if (window.relayManager) {
+      window.relayManager.initialize(pubkey);
+    }
+
+  } catch (error) {
+    hideLoadingModal();
+    showAuthResult('error', 'Extension login failed: ' + error.message);
+  }
+}
+
+// Login with Amber using NIP-55 protocol
+function loginWithAmber() {
+  // Hide amber options modal if open
+  const amberModal = document.getElementById('amber-options-modal');
+  if (amberModal) amberModal.classList.add('hidden');
+
+  // Check if running on localhost
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    showMessage('Amber login requires a real IP address or domain, not localhost.', 'error');
+    return;
+  }
+
+  showLoadingModal('Opening Amber app...');
+
+  // Set up callback listener BEFORE opening Amber
+  setupAmberCallbackListener();
+
+  // Generate callback URL (note the ?event= at the end - Amber appends result here)
+  const callbackUrl = `${window.location.origin}/api/auth/amber-callback?event=`;
+
+  // Use NIP-55 nostrsigner URL format (EXACTLY like nostr-hero/Grain)
+  const amberUrl = `nostrsigner:?compressionType=none&returnType=signature&type=get_public_key&callbackUrl=${encodeURIComponent(callbackUrl)}&appName=${encodeURIComponent('Blossom Gallery')}`;
+
+  console.log('=== AMBER DEBUG ===');
+  console.log('Amber URL:', amberUrl);
+  console.log('Callback URL:', callbackUrl);
+  console.log('==================');
+
+  try {
+    // Use window.location.href - most reliable for custom protocols on mobile
+    window.location.href = amberUrl;
+
+    // Set timeout for no response
+    setTimeout(() => {
+      if (!amberCallbackReceived) {
+        hideLoadingModal();
+        showMessage('Amber connection timed out. Make sure Amber is installed and approved the request.', 'error');
+      }
+    }, 60000);
+
+  } catch (error) {
+    hideLoadingModal();
+    showMessage('Failed to open Amber app: ' + error.message, 'error');
+  }
+}
+
+// Set up Amber callback listener
+function setupAmberCallbackListener() {
+  amberCallbackReceived = false;
+
+  const handleVisibilityChange = () => {
+    if (!document.hidden && !amberCallbackReceived) {
+      setTimeout(checkForAmberCallback, 500);
+    }
+  };
+
+  const handleFocus = () => {
+    if (!amberCallbackReceived) {
+      setTimeout(checkForAmberCallback, 500);
+    }
+  };
+
+  // Listen for postMessage from callback page
+  const handleMessage = (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data && (event.data.type === 'amber_success' || event.data.type === 'amber_error')) {
+      handleAmberMessage(event.data);
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('focus', handleFocus);
+  window.addEventListener('message', handleMessage);
+
+  // Also check immediately and periodically
+  setTimeout(checkForAmberCallback, 1000);
+
+  // Clean up listeners after timeout
+  setTimeout(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('focus', handleFocus);
+    window.removeEventListener('message', handleMessage);
+  }, 65000);
+}
+
+// Check for Amber callback result in localStorage
+function checkForAmberCallback() {
+  const amberResult = localStorage.getItem('amber_callback_result');
+  if (amberResult) {
+    try {
+      localStorage.removeItem('amber_callback_result');
+      const data = JSON.parse(amberResult);
+      amberCallbackReceived = true;
+      handleAmberCallbackData(data);
+    } catch (error) {
+      console.error('Failed to parse Amber result:', error);
+    }
+  }
+}
+
+// Handle postMessage from Amber callback page
+function handleAmberMessage(data) {
+  amberCallbackReceived = true;
+  if (data.type === 'amber_success') {
+    handleAmberCallbackData({
+      success: true,
+      publicKey: data.publicKey,
+      npub: data.npub
+    });
+  } else if (data.type === 'amber_error') {
+    handleAmberCallbackData({
+      success: false,
+      error: data.error
+    });
+  }
+}
+
+// Handle Amber callback data
+async function handleAmberCallbackData(data) {
+  hideLoadingModal();
+
+  if (!data.success) {
+    showAuthResult('error', data.error || 'Amber login failed');
+    return;
+  }
+
+  try {
+    // Session was created by the callback handler, just need to initialize client side
+    if (window.sessionManager) {
+      await window.sessionManager.initializeFromServer();
+    }
+
+    // Initialize profile and relay managers
+    if (data.publicKey) {
+      if (window.profileManager) {
+        window.profileManager.init(data.publicKey, data.npub, false);
+      }
+      if (window.relayManager) {
+        window.relayManager.initialize(data.publicKey);
+      }
+    }
+
+    showAuthResult('success', 'Connected via Amber!');
+
+    setTimeout(() => {
+      hideLoginModal();
+      updateLoginButton();
+    }, 1000);
+
+  } catch (error) {
+    showAuthResult('error', 'Failed to initialize session: ' + error.message);
+  }
+}
+
+// Show auth result inline
+function showAuthResult(type, message) {
+  const resultDiv = document.getElementById('auth-result');
+  if (resultDiv) {
+    let className = 'bg-gray-900/50 border border-gray-500 text-gray-200';
+    if (type === 'success') className = 'bg-green-900/50 border border-green-500 text-green-200';
+    else if (type === 'error') className = 'bg-red-900/50 border border-red-500 text-red-200';
+    else if (type === 'loading') className = 'bg-blue-900/50 border border-blue-500 text-blue-200';
+    resultDiv.innerHTML = `<div class="${className} px-4 py-3 rounded text-sm"><p>${message}</p></div>`;
+  }
+}
+
+function clearAuthResult() {
+  const resultDiv = document.getElementById('auth-result');
+  if (resultDiv) resultDiv.innerHTML = '';
+}
+
+window.showLoadingModal = function(text = 'Loading...') {
+  const modal = document.getElementById('loading-modal');
+  const loadingText = document.getElementById('loading-text');
+  if (modal && loadingText) {
+    loadingText.textContent = text;
+    modal.classList.remove('hidden');
+  }
+};
+
+window.hideLoadingModal = function() {
+  const modal = document.getElementById('loading-modal');
+  if (modal) modal.classList.add('hidden');
+};
+
+function handleLoginClick() {
+  if (window.sessionManager && window.sessionManager.isAuthenticated()) {
+    toggleProfileDropdown();
+  } else {
+    showLoginModal();
+  }
+}
+
+function toggleProfileDropdown() {
+  let dropdown = document.getElementById('profile-dropdown-menu');
+  if (dropdown) {
+    dropdown.remove();
+    return;
+  }
+
+  dropdown = document.createElement('div');
+  dropdown.id = 'profile-dropdown-menu';
+
+  const loginBtn = document.getElementById('login-btn');
+  const buttonRect = loginBtn.getBoundingClientRect();
+
+  dropdown.style.cssText = `position: fixed; top: ${buttonRect.bottom + 8}px; right: ${window.innerWidth - buttonRect.right}px; min-width: 200px; z-index: 1000;`;
+  dropdown.className = 'bg-gray-800 border border-purple-500 rounded-lg shadow-lg overflow-hidden';
+
+  const profile = window.profileManager ? window.profileManager.getProfile() : null;
+  const session = window.sessionManager ? window.sessionManager.getSession() : null;
+
+  let displayName = session?.npub ? session.npub.slice(0, 12) + '...' : 'User';
+  let profilePicture = null;
+
+  if (profile) {
+    displayName = profile.display_name || profile.name || displayName;
+    profilePicture = profile.picture;
+  }
+
+  dropdown.innerHTML = `
+    <div class="p-3 border-b border-gray-700 flex items-center gap-3">
+      ${profilePicture ? `<img src="${profilePicture}" alt="Profile" class="w-10 h-10 rounded-full object-cover border-2 border-purple-500">` : `<div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center border-2 border-gray-600"><span class="text-gray-400">?</span></div>`}
+      <div class="flex-1 min-w-0">
+        <div class="font-bold text-sm truncate text-white">${displayName}</div>
+        ${session?.npub ? `<div class="text-xs truncate text-gray-400">${session.npub.slice(0, 16)}...</div>` : ''}
+      </div>
+    </div>
+    <div class="py-1">
+      <a href="/my-media" hx-get="/my-media" hx-target="#main-content" hx-push-url="true" onclick="closeProfileDropdown()" class="block px-4 py-2 text-sm hover:bg-gray-700 transition flex items-center gap-2">
+        <span>My Media</span>
+      </a>
+      <a href="/settings" hx-get="/settings" hx-target="#main-content" hx-push-url="true" onclick="closeProfileDropdown()" class="block px-4 py-2 text-sm hover:bg-gray-700 transition flex items-center gap-2">
+        <span>Settings</span>
+      </a>
+      <button onclick="copyNpub()" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 transition flex items-center gap-2">
+        <span>Copy npub</span>
+      </button>
+      <button onclick="handleLogout()" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 transition flex items-center gap-2 text-red-400">
+        <span>Logout</span>
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(dropdown);
+  if (typeof htmx !== 'undefined') htmx.process(dropdown);
+
+  setTimeout(() => {
+    const closeDropdown = (event) => {
+      if (!dropdown.contains(event.target) && !loginBtn.contains(event.target)) {
+        dropdown.remove();
+        document.removeEventListener('click', closeDropdown);
+      }
+    };
+    document.addEventListener('click', closeDropdown);
+  }, 100);
+}
+
+function closeProfileDropdown() {
+  const dropdown = document.getElementById('profile-dropdown-menu');
+  if (dropdown) dropdown.remove();
+}
+
+function copyNpub() {
+  closeProfileDropdown();
+  const npub = window.sessionManager?.getNpub();
+  if (npub) {
+    navigator.clipboard.writeText(npub).then(() => {
+      showMessage('npub copied to clipboard!', 'success');
+    }).catch(() => {
+      showMessage('Failed to copy', 'error');
+    });
+  }
+}
+
+async function handleLogout() {
+  closeProfileDropdown();
+  if (window.sessionManager) {
+    try {
+      await window.sessionManager.logout();
+      // Clear encrypted key on logout
+      if (window.clearEncryptedKey) {
+        window.clearEncryptedKey();
+      }
+      showMessage('Logged out successfully', 'success');
+      updateLoginButton();
+      setTimeout(() => {
+        if (window.htmx) {
+          htmx.ajax('GET', '/', {target: '#main-content', swap: 'innerHTML'});
+          history.pushState({}, '', '/');
+        } else {
+          window.location.href = '/';
+        }
+      }, 500);
+    } catch (error) {
+      showMessage('Logout failed: ' + error.message, 'error');
+    }
+  }
+}
+
+function updateLoginButton() {
+  const button = document.getElementById('login-btn');
+  const buttonContent = document.getElementById('login-btn-content');
+  if (!button || !buttonContent) return;
+
+  if (window.sessionManager && window.sessionManager.isAuthenticated()) {
+    const profile = window.profileManager ? window.profileManager.getProfile() : null;
+    const session = window.sessionManager.getSession();
+
+    let displayName = session?.npub ? session.npub.slice(0, 8) + '...' : 'User';
+    let profilePicture = null;
+
+    if (profile && (profile.display_name || profile.name)) {
+      displayName = profile.display_name || profile.name;
+      profilePicture = profile.picture;
+    }
+
+    if (profilePicture) {
+      buttonContent.innerHTML = `<span class="hidden sm:inline truncate max-w-[100px]">${displayName}</span><img src="${profilePicture}" alt="Profile" class="w-6 h-6 rounded-full object-cover border border-purple-400">`;
+    } else {
+      buttonContent.innerHTML = `<span class="hidden sm:inline truncate max-w-[100px]">${displayName}</span><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center"><span class="text-xs">?</span></div>`;
+    }
+    button.title = displayName;
+    button.className = 'bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 backdrop-blur-sm';
+  } else {
+    buttonContent.innerHTML = 'Login';
+    button.title = 'Login';
+    button.className = 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-4 py-2 rounded-lg font-medium transition-all transform hover:scale-105 flex items-center gap-2';
+  }
+}
+
+function showLoginModal() {
+  clearAuthResult();
+  document.getElementById('login-modal').classList.remove('hidden');
+}
+
+function hideLoginModal() {
+  document.getElementById('login-modal').classList.add('hidden');
+  hidePrivateKeyForm();
+  hideGeneratedKeys();
+  hideEncryptionPasswordModal();
+}
+
+function showPrivateKeyForm() {
+  hideLoginModal();
+  document.getElementById('private-key-modal').classList.remove('hidden');
+}
+
+function hidePrivateKeyForm() {
+  const modal = document.getElementById('private-key-modal');
+  if (modal) modal.classList.add('hidden');
+  const input = document.getElementById('private-key-modal-input');
+  const passwordInput = document.getElementById('encryption-password-modal-input');
+  if (input) input.value = '';
+  if (passwordInput) passwordInput.value = '';
+}
+
+async function loginWithPrivateKeyAndPassword() {
+  if (!window.sessionManager) {
+    showMessage('Session manager not available', 'error');
+    return;
+  }
+
+  const privateKeyInput = document.getElementById('private-key-modal-input')?.value?.trim();
+  const password = document.getElementById('encryption-password-modal-input')?.value?.trim();
+
+  if (!privateKeyInput) { showMessage('Please enter your private key', 'error'); return; }
+  if (!password) { showMessage('Please enter an encryption password', 'error'); return; }
+
+  try {
+    showLoadingModal('Logging in...');
+
+    // Convert nsec to hex if needed
+    const privateKeyHex = window.nsecToHex ? window.nsecToHex(privateKeyInput) : privateKeyInput;
+
+    // Encrypt and store the private key
+    const encryptedKey = await window.encryptPrivateKey(privateKeyHex, password);
+    window.storeEncryptedKey(encryptedKey);
+
+    // Login with session manager
+    await window.sessionManager.loginWithPrivateKey(privateKeyInput);
+
+    // Clear inputs
+    document.getElementById('private-key-modal-input').value = '';
+    document.getElementById('encryption-password-modal-input').value = '';
+
+    // Initialize profile and relay managers
+    const session = window.sessionManager.getSession();
+    if (session) {
+      const pubkey = session.publicKey || session.pubkey;
+      if (window.profileManager && pubkey) {
+        await window.profileManager.init(pubkey, session.npub, false);
+      }
+      if (window.relayManager && pubkey) {
+        window.relayManager.initialize(pubkey);
+      }
+    }
+
+    hideLoadingModal();
+    hidePrivateKeyForm();
+    showMessage('Logged in successfully!', 'success');
+    updateLoginButton();
+  } catch (error) {
+    hideLoadingModal();
+    showMessage('Login failed: ' + error.message, 'error');
+  }
+}
+
+function copyToClipboard(elementId, label) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  const text = element.textContent;
+  if (!text) return;
+
+  navigator.clipboard.writeText(text).then(() => {
+    showMessage(`${label} copied!`, 'success');
+  }).catch(() => {
+    showMessage('Failed to copy', 'error');
+  });
+}
+
+function hideGeneratedKeys() {
+  const modal = document.getElementById('generated-keys-modal');
+  if (modal) modal.classList.add('hidden');
+  document.getElementById('gen-npub').textContent = '';
+  document.getElementById('gen-nsec').textContent = '';
+  generatedPrivateKey = null;
+}
+
+function showGeneratedKeys(keyPair) {
+  hideLoginModal();
+  document.getElementById('gen-npub').textContent = keyPair.npub;
+  document.getElementById('gen-nsec').textContent = keyPair.nsec;
+  generatedPrivateKey = keyPair.nsec;
+  document.getElementById('generated-keys-modal').classList.remove('hidden');
+}
+
+function useGeneratedKeys() {
+  if (generatedPrivateKey) {
+    hideGeneratedKeys();
+    showEncryptionPasswordModal();
+  } else {
+    showMessage('No keys available', 'error');
+  }
+}
+
+function showEncryptionPasswordModal() {
+  // Keep the private key but hide generated keys modal
+  const genModal = document.getElementById('generated-keys-modal');
+  if (genModal) genModal.classList.add('hidden');
+
+  const modal = document.getElementById('encryption-password-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      const input = document.getElementById('gen-encryption-password-input');
+      if (input) input.focus();
+    }, 100);
+  }
+}
+
+function hideEncryptionPasswordModal() {
+  const modal = document.getElementById('encryption-password-modal');
+  if (modal) modal.classList.add('hidden');
+  const input = document.getElementById('gen-encryption-password-input');
+  if (input) input.value = '';
+}
+
+function cancelEncryptionPassword() {
+  hideEncryptionPasswordModal();
+  generatedPrivateKey = null;
+  showLoginModal();
+}
+
+async function loginWithGeneratedKeys() {
+  const password = document.getElementById('gen-encryption-password-input')?.value?.trim();
+  if (!password) { showMessage('Please enter an encryption password', 'error'); return; }
+  if (!generatedPrivateKey) { showMessage('No keys available', 'error'); return; }
+
+  try {
+    hideEncryptionPasswordModal();
+    showLoadingModal('Creating account...');
+
+    // Convert nsec to hex if needed
+    const privateKeyHex = window.nsecToHex ? window.nsecToHex(generatedPrivateKey) : generatedPrivateKey;
+
+    // Encrypt and store the private key
+    const encryptedKey = await window.encryptPrivateKey(privateKeyHex, password);
+    window.storeEncryptedKey(encryptedKey);
+
+    await window.sessionManager.loginWithPrivateKey(generatedPrivateKey);
+    generatedPrivateKey = null;
+
+    // Initialize profile and relay managers
+    const session = window.sessionManager.getSession();
+    if (session) {
+      const pubkey = session.publicKey || session.pubkey;
+      if (window.profileManager && pubkey) {
+        await window.profileManager.init(pubkey, session.npub, true); // true = new account
+      }
+      if (window.relayManager && pubkey) {
+        window.relayManager.initialize(pubkey);
+      }
+    }
+
+    hideLoadingModal();
+    showMessage('Account created successfully!', 'success');
+    updateLoginButton();
+  } catch (error) {
+    hideLoadingModal();
+    showMessage('Login failed: ' + error.message, 'error');
+  }
+}
+
+async function generateNewKeys() {
+  if (!window.sessionManager) {
+    showMessage('Session manager not available', 'error');
+    return;
+  }
+
+  try {
+    const keyPair = await window.sessionManager.generateKeys();
+    if (keyPair) {
+      showGeneratedKeys(keyPair);
+    } else {
+      showMessage('Failed to generate keys', 'error');
+    }
+  } catch (error) {
+    showMessage('Key generation failed: ' + error.message, 'error');
+  }
+}
+
+// Initialize when scripts loaded
+if (typeof window !== 'undefined') {
+  document.addEventListener('coreScriptsLoaded', () => {
+    setTimeout(updateLoginButton, 100);
+  });
+
+  window.addEventListener('profile-updated', () => {
+    updateLoginButton();
+  });
+
+  const setupSessionListeners = () => {
+    if (window.sessionManager) {
+      window.sessionManager.on('authenticationSuccess', updateLoginButton);
+      window.sessionManager.on('loggedOut', updateLoginButton);
+      window.sessionManager.on('sessionReady', updateLoginButton);
+    } else {
+      setTimeout(setupSessionListeners, 100);
+    }
+  };
+  setupSessionListeners();
+}
+</script>
+{{end}}
