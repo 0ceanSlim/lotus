@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"github.com/gin-gonic/gin"
 
+	"github.com/0ceanSlim/lotus/internal/bloburl"
 	"github.com/0ceanSlim/lotus/internal/db"
 )
 
@@ -112,7 +113,7 @@ func getUserMedia(queries *db.Queries, cdnBaseUrl string, log *zap.Logger) gin.H
 		for i, blob := range blobs {
 			mediaItems[i] = MediaItem{
 				SHA256:   blob.Hash,
-				URL:      cdnBaseUrl + "/" + blob.Hash,
+				URL:      bloburl.Build(cdnBaseUrl, blob.Hash, blob.Type),
 				Type:     blob.Type,
 				Size:     blob.Size,
 				Uploaded: blob.Created,

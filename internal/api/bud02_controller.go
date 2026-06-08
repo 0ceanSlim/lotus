@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -55,11 +56,12 @@ func listBlobs(services core.Services) gin.HandlerFunc {
 
 func deleteBlob(services core.Services) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		hash := strings.Split(ctx.Param("path"), ".")[0]
 		if err := bud02.DeleteBlob(
 			ctx.Request.Context(),
 			services,
 			ctx.GetString("pk"),
-			ctx.Param("path"),
+			hash,
 			ctx.GetString("x"),
 		); err != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, apiError{Message: err.Error()})

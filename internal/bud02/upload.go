@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/0ceanSlim/lotus/internal/bloburl"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/hashing"
 )
@@ -55,7 +56,7 @@ func UploadBlob(
 		return blob, nil
 	}
 
-	url := cdnBaseUrl + "/" + hash
+	url := bloburl.Build(cdnBaseUrl, hash, mimeType.String())
 
 	blobDescriptor, err := blobs.Save(
 		ctx,

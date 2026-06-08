@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/0ceanSlim/lotus/internal/bloburl"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/hashing"
 )
@@ -71,7 +72,7 @@ func MirrorBlob(
 		ctx,
 		pubkey,
 		hash,
-		cdnBaseUrl+"/"+hash,
+		bloburl.Build(cdnBaseUrl, hash, mimeType.String()),
 		int64(len(blobBytes)),
 		mimeType.String(),
 		blobBytes,

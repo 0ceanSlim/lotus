@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/0ceanSlim/lotus/internal/bloburl"
 	"github.com/0ceanSlim/lotus/internal/config"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
@@ -115,7 +116,7 @@ func (s *zeroXZeroBlobService) ValidateStorageQuota(_ context.Context, _ string,
 }
 
 func (s *zeroXZeroBlobService) dbBlobToDescriptor(row db.Blobs0x0) *core.Blob {
-	publicUrl := s.cdnBaseUrl + "/" + row.Hash
+	publicUrl := bloburl.Build(s.cdnBaseUrl, row.Hash, row.Type)
 	return &core.Blob{
 		Url:         publicUrl,
 		ExternalUrl: row.Url,

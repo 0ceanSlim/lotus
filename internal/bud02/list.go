@@ -3,6 +3,7 @@ package bud02
 import (
 	"context"
 
+	"github.com/0ceanSlim/lotus/internal/bloburl"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
 )
@@ -38,7 +39,7 @@ func ListAllBlobs(
 
 	blobs := make([]*core.Blob, len(dbBlobs))
 	for i := range dbBlobs {
-		url := cdnBaseUrl + "/" + dbBlobs[i].Hash
+		url := bloburl.Build(cdnBaseUrl, dbBlobs[i].Hash, dbBlobs[i].Type)
 		blobs[i] = &core.Blob{
 			Url:      url,
 			Sha256:   dbBlobs[i].Hash,
