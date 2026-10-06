@@ -54,6 +54,11 @@ type BlobStorage interface {
 	Exists(ctx context.Context, sha256 string) (bool, error)
 	GetFromHash(ctx context.Context, sha256 string) (*Blob, error)
 	GetFromPubkey(ctx context.Context, pubkey string) ([]*Blob, error)
+	// ListMeta returns a pubkey's blobs newest first without loading blob
+	// bytes; the drive listing uses it.
+	ListMeta(ctx context.Context, pubkey string) ([]*Blob, error)
+	// Meta returns one blob's metadata without its bytes.
+	Meta(ctx context.Context, sha256 string) (*Blob, error)
 	DeleteFromHash(ctx context.Context, sha256 string) error
 	ValidateStorageQuota(ctx context.Context, pubkey string, newFileSize int64) error
 }

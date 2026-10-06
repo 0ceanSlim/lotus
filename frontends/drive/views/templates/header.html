@@ -1,0 +1,51 @@
+{{define "header"}}
+{{if .Unclaimed}}
+<!-- Loud on purpose: the first claim wins, so the operator needs to act. -->
+<div class="px-4 py-2 text-sm font-medium text-center bg-danger-dim text-danger">
+  ⚠ This server has no operator yet.
+  <a href="/setup" class="underline">Claim it now</a> before someone else does.
+</div>
+{{end}}
+<header class="sticky top-0 z-40 border-b bg-surface-base/90 backdrop-blur border-border">
+  <div class="flex items-center gap-3 w-full max-w-6xl px-4 py-3 mx-auto">
+    <!-- Brand. Full reload on purpose: the root picks the server page or the
+         drive from the session, and the header itself depends on it. -->
+    <a href="/" class="flex items-center gap-2 text-lg font-bold shrink-0 text-text hover:text-accent">
+      {{if .Server.Icon}}<img src="{{.Server.Icon}}" alt="" class="object-cover w-7 h-7 rounded-md" />{{else}}<span>🪷</span>{{end}}
+      <span>{{if .Server.Name}}{{.Server.Name}}{{else}}Lotus{{end}}</span>
+    </a>
+
+    <nav class="flex items-center gap-1 ml-2 text-sm">
+      {{if .LoggedIn}}
+      <a href="/drive" class="px-3 py-1.5 rounded-md text-text-secondary hover:text-text hover:bg-surface-hover">Drive</a>
+      {{end}}
+      {{if .IsAdmin}}
+      <a href="/admin" class="px-3 py-1.5 rounded-md text-text-secondary hover:text-text hover:bg-surface-hover">Admin</a>
+      {{end}}
+    </nav>
+
+    <div class="flex items-center gap-2 ml-auto shrink-0">
+      <!-- Theme swapper. theme.js fills the panel. -->
+      <div class="relative">
+        <button
+          id="theme-button"
+          type="button"
+          title="Theme"
+          class="p-2 rounded-md text-text-secondary hover:text-text hover:bg-surface-hover"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+          </svg>
+        </button>
+        <div
+          id="theme-panel"
+          class="absolute right-0 z-50 hidden w-40 p-1 mt-2 border rounded-lg shadow-lg bg-surface border-border top-full"
+        ></div>
+      </div>
+
+      <!-- Login / profile. navigation.js swaps its contents. -->
+      <div id="profile-nav">{{template "login-button" .}}</div>
+    </div>
+  </div>
+</header>
+{{end}}

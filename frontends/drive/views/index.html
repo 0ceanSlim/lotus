@@ -1,0 +1,99 @@
+{{define "title"}}Home{{end}}
+
+{{define "view"}}
+<!-- Server page: what this deployment is, what you get, and how to use it.
+     Identity comes from the template; limits and stats load from
+     /api/v1/server/info and /stats via landing.js. -->
+<section class="py-10 text-center">
+  <div class="flex items-center justify-center gap-3 mb-3">
+    {{if .Server.Icon}}<img src="{{.Server.Icon}}" alt="" class="object-cover w-14 h-14 rounded-xl" />{{else}}<span class="text-5xl">🪷</span>{{end}}
+    <h1 class="text-4xl font-bold tracking-tight">{{if .Server.Name}}{{.Server.Name}}{{else}}Lotus{{end}}</h1>
+  </div>
+  <p class="max-w-2xl mx-auto text-text-secondary">
+    {{if .Server.Description}}{{.Server.Description}}{{else}}A Blossom media server. Files you attach from any Nostr client land here, and the drive lets you find, organize and share them.{{end}}
+  </p>
+  <div class="flex flex-wrap items-center justify-center gap-3 mt-6">
+    {{if .LoggedIn}}
+    <a href="/drive" class="px-5 py-2.5 text-sm font-medium rounded-md bg-accent text-accent-fg hover:bg-accent-hover">Open my drive</a>
+    {{else}}
+    <button type="button" onclick="showAuthModal()" class="px-5 py-2.5 text-sm font-medium rounded-md bg-accent text-accent-fg hover:bg-accent-hover">Sign in to your drive</button>
+    {{end}}
+    {{if .Server.MembershipUrl}}
+    <a href="{{.Server.MembershipUrl}}" target="_blank" rel="noopener" class="px-5 py-2.5 text-sm font-medium border rounded-md border-border-strong text-text hover:bg-surface-hover">Membership ↗</a>
+    {{end}}
+  </div>
+</section>
+
+<!-- What you get -->
+<section class="grid grid-cols-2 gap-3 md:grid-cols-4" id="server-facts">
+  <div class="p-4 border rounded-lg bg-surface border-border">
+    <div class="text-xs text-text-secondary">Max file size</div>
+    <div class="mt-1 text-xl font-semibold" data-fact="max-upload">—</div>
+  </div>
+  <div class="p-4 border rounded-lg bg-surface border-border">
+    <div class="text-xs text-text-secondary">Storage per user</div>
+    <div class="mt-1 text-xl font-semibold" data-fact="quota">—</div>
+  </div>
+  <div class="p-4 border rounded-lg bg-surface border-border">
+    <div class="text-xs text-text-secondary">Retention</div>
+    <div class="mt-1 text-xl font-semibold capitalize" data-fact="retention">{{.Server.Retention}}</div>
+  </div>
+  <div class="p-4 border rounded-lg bg-surface border-border">
+    <div class="text-xs text-text-secondary">Cost</div>
+    <div class="mt-1 text-xl font-semibold capitalize" data-fact="cost">{{if .Server.Cost}}{{.Server.Cost}}{{else}}free{{end}}</div>
+  </div>
+</section>
+
+<section class="grid gap-6 mt-8 md:grid-cols-2">
+  <!-- Get set up -->
+  <div class="p-5 border rounded-lg bg-surface border-border">
+    <h2 class="text-lg font-semibold">Use it from your client</h2>
+    <p class="mt-1 text-sm text-text-secondary">
+      Nostr clients upload to the servers in your Blossom server list. Add this one and your attachments land here.
+    </p>
+    <div class="flex items-center gap-2 mt-4">
+      <code id="server-url" class="flex-1 px-3 py-2 font-mono text-sm truncate border rounded-md bg-surface-inset border-border">{{.Server.Url}}</code>
+      <button type="button" data-copy="#server-url" class="px-3 py-2 text-sm border rounded-md border-border-strong hover:bg-surface-hover">Copy</button>
+    </div>
+    <ul class="mt-4 space-y-1 text-sm text-text-secondary">
+      <li>• Accepts uploads, <a href="https://github.com/hzrd149/blossom/blob/master/buds/04.md" target="_blank" rel="noopener" class="text-text hover:text-accent">mirrors</a>, and <a href="https://github.com/hzrd149/blossom/blob/master/buds/06.md" target="_blank" rel="noopener" class="text-text hover:text-accent">upload checks</a>.</li>
+      <li>• Blobs are addressed by their sha256, so links never change.</li>
+      <li>• Allowed types: <span class="text-text" data-fact="mime-types">—</span></li>
+    </ul>
+  </div>
+
+  <!-- Stats -->
+  <div class="p-5 border rounded-lg bg-surface border-border">
+    <h2 class="text-lg font-semibold">This server</h2>
+    <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+      <div>
+        <div class="text-2xl font-semibold" data-stat="storage">—</div>
+        <div class="text-xs text-text-secondary">stored</div>
+      </div>
+      <div>
+        <div class="text-2xl font-semibold" data-stat="blobs">—</div>
+        <div class="text-xs text-text-secondary">files</div>
+      </div>
+      <div>
+        <div class="text-2xl font-semibold" data-stat="users">—</div>
+        <div class="text-xs text-text-secondary">users</div>
+      </div>
+    </div>
+    <div class="mt-4 text-sm text-text-secondary">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="mr-1">Supported:</span>
+        <span class="inline-flex flex-wrap gap-1.5" data-fact="buds"></span>
+      </div>
+      <div class="mt-2">Operator: <a data-fact="admin" class="font-mono text-text hover:text-accent" href="#">—</a></div>
+      {{if .Server.Contact}}<div class="mt-1">Contact: <span class="text-text">{{.Server.Contact}}</span></div>{{end}}
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    function go() { if (window.LotusLanding) window.LotusLanding.init(); }
+    if (window.LotusLanding) go(); else document.addEventListener("DOMContentLoaded", go);
+  })();
+</script>
+{{end}}

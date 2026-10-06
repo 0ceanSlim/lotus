@@ -1,0 +1,42 @@
+{{define "user-dropdown"}}
+<!-- Profile dropdown. Lives at body level so the sticky header can't clip
+     it; navigation.js positions it under the login button. -->
+<div
+  id="user-dropdown-menu"
+  class="fixed z-50 hidden w-64 overflow-hidden border rounded-lg shadow-lg bg-surface border-border"
+>
+  <div class="flex items-center gap-3 px-4 py-3 border-b bg-surface-elevated border-border">
+    <div id="user-dropdown-pfp-wrap" class="flex items-center justify-center w-10 h-10 rounded-full bg-surface-overlay shrink-0">
+      <span class="text-lg">👤</span>
+    </div>
+    <div class="flex-1 min-w-0 text-left">
+      <div id="user-dropdown-name" class="text-sm font-semibold truncate">Loading…</div>
+      <div id="user-dropdown-npub" class="font-mono text-xs truncate text-text-secondary"></div>
+    </div>
+  </div>
+  <div class="py-1 text-left">
+    <a href="/drive" class="flex items-center w-full gap-2 px-4 py-2 text-sm hover:bg-surface-hover" onclick="closeUserDropdown()">
+      <span>🗂️</span> My drive
+    </a>
+    <a href="/drive/settings" class="flex items-center w-full gap-2 px-4 py-2 text-sm hover:bg-surface-hover" onclick="closeUserDropdown()">
+      <span>⚙️</span> Settings
+    </a>
+    <a href="/" class="flex items-center w-full gap-2 px-4 py-2 text-sm hover:bg-surface-hover" onclick="closeUserDropdown()">
+      <span>🏠</span> Home
+    </a>
+    {{if .IsAdmin}}
+    <a href="/admin" class="flex items-center w-full gap-2 px-4 py-2 text-sm hover:bg-surface-hover" onclick="closeUserDropdown()">
+      <span>🛠️</span> Admin
+    </a>
+    {{end}}
+    <hr class="border-border" />
+    <button
+      type="button"
+      class="flex items-center w-full gap-2 px-4 py-2 text-sm text-left text-danger hover:bg-danger-dim"
+      onclick="logoutUser(); closeUserDropdown();"
+    >
+      <span>🚪</span> Sign out
+    </button>
+  </div>
+</div>
+{{end}}

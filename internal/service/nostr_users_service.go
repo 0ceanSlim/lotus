@@ -16,6 +16,9 @@ type NostrUsersResponse struct {
 	Names map[string]string `json:"names"`
 }
 
+// NostrUsersService fetches the pubkeys in a .well-known/nostr.json and hands
+// them to the access rules as allowed uploaders. The URL can change at
+// runtime from the admin page; an empty URL clears the member set.
 type NostrUsersService struct {
 	url        string
 	log        *zap.Logger
@@ -35,15 +38,47 @@ func NewNostrUsersService(url string, log *zap.Logger, updateFunc func([]string)
 	}
 }
 
+// SetURL switches the source. A changed URL is fetched right away in the
+// background; an empty one clears the members immediately.
+func (s *NostrUsersService) SetURL(url string) {
+	s.mu.Lock()
+	changed := s.url != url
+	s.url = url
+	s.mu.Unlock()
+	if !changed {
+		return
+	}
+	if url == "" {
+		s.publish([]string{})
+		return
+	}
+	go s.refresh(context.Background())
+}
+
+func (s *NostrUsersService) currentURL() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.url
+}
+
+func (s *NostrUsersService) publish(pubkeys []string) {
+	s.mu.Lock()
+	s.cachedKeys = pubkeys
+	s.mu.Unlock()
+	if s.updateFunc != nil {
+		s.updateFunc(pubkeys)
+	}
+}
+
 func (s *NostrUsersService) FetchUsers(ctx context.Context) ([]string, error) {
-	if s.url == "" {
-		s.log.Info("nostr_users_url is empty, skipping automatic user fetching")
+	url := s.currentURL()
+	if url == "" {
 		return []string{}, nil
 	}
 
-	s.log.Info("fetching users from nostr.json", zap.String("url", s.url))
+	s.log.Debug("fetching users from nostr.json", zap.String("url", url))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", s.url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -58,7 +93,7 @@ func (s *NostrUsersService) FetchUsers(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
@@ -74,11 +109,6 @@ func (s *NostrUsersService) FetchUsers(ctx context.Context) ([]string, error) {
 	}
 
 	s.log.Info("fetched users from nostr.json", zap.Int("count", len(pubkeys)))
-
-	s.mu.Lock()
-	s.cachedKeys = pubkeys
-	s.mu.Unlock()
-
 	return pubkeys, nil
 }
 
@@ -91,31 +121,34 @@ func (s *NostrUsersService) GetCachedKeys() []string {
 	return keys
 }
 
-func (s *NostrUsersService) StartPeriodicRefresh(ctx context.Context, interval time.Duration) {
+func (s *NostrUsersService) refresh(ctx context.Context) {
 	pubkeys, err := s.FetchUsers(ctx)
 	if err != nil {
-		s.log.Error("initial fetch failed", zap.Error(err))
-	} else if s.updateFunc != nil {
-		s.updateFunc(pubkeys)
+		s.log.Error("nostr users fetch failed", zap.Error(err))
+		return
 	}
+	s.publish(pubkeys)
+}
 
-	ticker := time.NewTicker(interval)
+// StartPeriodicRefresh fetches now and then every interval until ctx ends.
+// With no URL configured the fetch is a no-op, so it is safe to always run.
+func (s *NostrUsersService) StartPeriodicRefresh(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	if s.currentURL() != "" {
+		s.refresh(ctx)
+	}
 	go func() {
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
-				s.log.Info("stopping nostr users periodic refresh")
 				return
 			case <-ticker.C:
-				pubkeys, err := s.FetchUsers(ctx)
-				if err != nil {
-					s.log.Error("periodic fetch failed", zap.Error(err))
-					continue
-				}
-
-				if s.updateFunc != nil {
-					s.updateFunc(pubkeys)
+				if s.currentURL() != "" {
+					s.refresh(ctx)
 				}
 			}
 		}

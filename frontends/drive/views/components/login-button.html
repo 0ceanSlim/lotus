@@ -1,0 +1,17 @@
+{{define "login-button"}}
+<!-- Always present in the header. navigation.js swaps the inner content
+     between "Sign in" and the signed-in avatar + name, and routes the click
+     to mill or the profile dropdown accordingly. -->
+<button
+  id="login-btn"
+  type="button"
+  onclick="handleLoginClick()"
+  class="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors border rounded-md bg-accent text-accent-fg border-accent hover:bg-accent-hover"
+  title="Sign in"
+>
+  <span id="login-btn-content" class="inline-flex items-center gap-2">
+    <span>🗝️</span>
+    <span class="hidden sm:inline">Sign in</span>
+  </span>
+</button>
+{{end}}

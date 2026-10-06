@@ -10,4 +10,5 @@ type Services interface {
 	Settings() SettingService
 	Stats() StatService
 	Session() SessionService
+	ShortLinks() ShortLinkService
 }

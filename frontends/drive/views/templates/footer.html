@@ -1,0 +1,83 @@
+{{define "footer"}}
+<footer class="mt-12 border-t border-border bg-surface">
+  <div class="grid w-full max-w-6xl gap-8 px-4 py-10 mx-auto text-left md:grid-cols-3">
+    <!-- Brand -->
+    <div>
+      <div class="flex items-center gap-2 text-lg font-bold text-text">
+        <span>🪷</span><span>Lotus</span>
+      </div>
+      <p class="mt-2 text-sm leading-relaxed text-text-secondary">
+        A Blossom media server with a personal drive. Files you attach from any
+        Nostr client land here; the drive is where you find, organize and share them.
+      </p>
+      <p class="mt-3 text-sm text-text-secondary">
+        Made with 💦 by
+        <a href="https://njump.me/npub1zmc6qyqdfnllhnzzxr5wpepfpnzcf8q6m3jdveflmgruqvd3qa9sjv7f60" target="_blank" rel="noopener" class="text-text hover:text-accent">OceanSlim</a>.
+        Proudly open source.
+      </p>
+    </div>
+
+    <!-- This server -->
+    <div>
+      <h3 class="text-xs font-semibold tracking-wider uppercase text-text-muted">This server</h3>
+      <ul class="mt-3 space-y-2 text-sm">
+        <li class="flex items-baseline gap-2">
+          <span class="w-20 shrink-0 text-text-secondary">Name</span>
+          <span class="text-text">{{if .Server.Name}}{{.Server.Name}}{{else}}Lotus{{end}}</span>
+        </li>
+        {{if .Server.AdminNpub}}
+        <li class="flex items-baseline gap-2">
+          <span class="w-20 shrink-0 text-text-secondary">Operator</span>
+          <a href="{{.Server.AdminProfileUrl}}" target="_blank" rel="noopener" class="font-mono text-text hover:text-accent" title="{{.Server.AdminNpub}}">{{shortKey .Server.AdminNpub}}</a>
+        </li>
+        {{end}}
+        {{if .Server.Contact}}
+        <li class="flex items-baseline gap-2">
+          <span class="w-20 shrink-0 text-text-secondary">Contact</span>
+          <span class="text-text">{{.Server.Contact}}</span>
+        </li>
+        {{end}}
+        <li class="flex items-baseline gap-2">
+          <span class="w-20 shrink-0 text-text-secondary">Storage</span>
+          <span class="capitalize text-text">{{.Server.Retention}}{{if .Server.Cost}} · {{.Server.Cost}}{{end}}</span>
+        </li>
+        <li class="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+          {{if .Server.MembershipUrl}}<a href="{{.Server.MembershipUrl}}" target="_blank" rel="noopener" class="text-text hover:text-accent">Membership ↗</a>{{end}}
+          {{if .Server.TermsUrl}}<a href="{{.Server.TermsUrl}}" target="_blank" rel="noopener" class="text-text hover:text-accent">Terms</a>{{end}}
+          {{if .Server.PrivacyUrl}}<a href="{{.Server.PrivacyUrl}}" target="_blank" rel="noopener" class="text-text hover:text-accent">Privacy</a>{{end}}
+          <a href="/api/v1/server/info" target="_blank" rel="noopener" class="text-text hover:text-accent">Server info (JSON)</a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Built with -->
+    <div>
+      <h3 class="text-xs font-semibold tracking-wider uppercase text-text-muted">Built with</h3>
+      <ul class="mt-3 space-y-2 text-sm text-text-secondary">
+        <li>
+          <a href="https://github.com/hzrd149/blossom" target="_blank" rel="noopener" class="text-text hover:text-accent">Blossom</a>
+          · content-addressed blobs, authorized with your Nostr key
+        </li>
+        <li>
+          <a href="https://github.com/0ceanSlim/grain" target="_blank" rel="noopener" class="text-text hover:text-accent">grain</a>
+          · Nostr client library and relay
+        </li>
+        <li>
+          <a href="https://github.com/0ceanSlim/nostr-mill" target="_blank" rel="noopener" class="text-text hover:text-accent">mill</a>
+          · the sign-in modal and signer
+        </li>
+        <li class="pt-1">
+          <a href="https://github.com/0ceanSlim/lotus" target="_blank" rel="noopener" class="text-text hover:text-accent">Source on GitHub</a>
+          <span class="mx-1">·</span>
+          <a href="https://github.com/0ceanSlim/lotus/issues" target="_blank" rel="noopener" class="text-danger hover:opacity-80">🐛 Report a bug</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="px-4 py-4 text-xs text-center border-t border-border text-text-muted">
+    Lotus is open source under the MIT license.
+    Blob links are sha256 addresses and never change, whatever you do in the drive.
+  </div>
+</footer>
+{{end}}

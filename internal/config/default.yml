@@ -1,0 +1,70 @@
+# Lotus configuration.
+#
+# Lotus wrote this file on first start. Most of it can be changed from the
+# admin page once the server has been claimed at /setup; those changes are
+# written back here. The keys under "restart required" only take effect after
+# a restart.
+
+# ── Restart required ─────────────────────────────────────────────────────
+
+# SQLite database path, relative to the data directory unless absolute.
+db_path: "db/database.sqlite3"
+
+# DEBUG, INFO, WARN or ERROR.
+log_level: "INFO"
+
+# Address and port to listen on.
+api_addr: "0.0.0.0:8484"
+
+# Public base URL used in every blob link. Set this to the address clients
+# reach the server at, for example https://blossom.example.com when running
+# behind a reverse proxy.
+cdn_url: "http://localhost:8484"
+
+# ── Operator ─────────────────────────────────────────────────────────────
+
+# Hex pubkey of the operator. Empty means unclaimed: the first person to sign
+# in at /setup becomes the operator and gets the admin page.
+admin_pubkey: ""
+
+# Optional: a .well-known/nostr.json whose pubkeys may upload, refreshed every
+# five minutes.
+nostr_users_url: ""
+
+# ── Limits ───────────────────────────────────────────────────────────────
+
+max_upload_size_bytes: 104857600         # 100 MB per file
+max_storage_per_pubkey_bytes: 0           # 0 = unlimited
+
+# Serve the unauthenticated all-blobs listing at /list-all. Off for drive
+# deployments; gallery-style frontends turn it on.
+public_listing: false
+
+# ── Identity shown on the server page and in the sign-in modal ──────────
+
+server:
+  name: "Lotus"
+  description: ""
+  icon: ""
+  contact: ""
+  terms_url: ""
+  privacy_url: ""
+  cost: "free"            # "free" or "paid"
+  membership_url: ""      # where to send people to pay or join, when paid
+  # Where a pubkey links to; {npub} or {hex} is replaced. Point it at your own
+  # client, for example https://wheat.oslim.dev/p/{npub}. Empty means njump.
+  profile_url: ""
+
+# ── Access ───────────────────────────────────────────────────────────────
+
+# Rules are evaluated in order per resource; a rule for a specific pubkey
+# overrides an ALL rule. A resource with no rules is denied. Claiming the
+# server at /setup adds an UPLOAD rule for the operator.
+access_control_rules:
+  - action: "ALLOW"
+    pubkey: "ALL"
+    resource: "GET"
+
+# Accepted MIME types, or a single "*" for any.
+allowed_mime_types:
+  - "*"

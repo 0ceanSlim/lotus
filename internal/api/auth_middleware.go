@@ -8,12 +8,20 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
-
+	nostr "github.com/0ceanslim/grain/server/types"
+	"github.com/0ceanslim/grain/server/validation"
 	"github.com/gin-gonic/gin"
-	goNostr "github.com/nbd-wtf/go-nostr"
+	"go.uber.org/zap"
 )
 
+// blossomAuthKind is the Blossom authorization event kind (BUD-01).
+const blossomAuthKind = 24242
+
+// nostrAuthMiddleware verifies a Blossom authorization event in the
+// Authorization header: a signed kind-24242 event whose t tag names the
+// action, whose expiration lies in the future, and which carries an x tag
+// naming the blob hash for uploads and deletes. The signer's pubkey and the
+// x tag are left on the context for the handler.
 func nostrAuthMiddleware(action string, log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -23,88 +31,87 @@ func nostrAuthMiddleware(action string, log *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		if !strings.HasPrefix(authHeader, "Nostr ") {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Nostr") {
 			log.Debug("[nostrAuthMiddleware] missing Nostr header prefix")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		eventBase64 := strings.TrimPrefix(authHeader, "Nostr ")
-
-		eventBytes, err := base64.StdEncoding.DecodeString(eventBase64)
+		eventBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(parts[1]))
 		if err != nil {
 			log.Debug("[nostrAuthMiddleware] base64 decode event failed: " + err.Error())
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		ev := &goNostr.Event{}
-		if err := json.Unmarshal(eventBytes, ev); err != nil {
+		var ev nostr.Event
+		if err := json.Unmarshal(eventBytes, &ev); err != nil {
 			log.Debug("[nostrAuthMiddleware] json decode failed: " + err.Error())
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		if ok, err := ev.CheckSignature(); !ok || err != nil {
-			log.Debug("[nostrAuthMiddleware] check event sig failed")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		if ev.Kind != 24242 {
+		if ev.Kind != blossomAuthKind {
 			log.Debug("[nostrAuthMiddleware] invalid event kind")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		if ev.CreatedAt.Time().Unix() > time.Now().Unix()+60 {
+		if !validation.CheckSignature(ev) {
+			log.Debug("[nostrAuthMiddleware] check event sig failed")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		now := time.Now().Unix()
+		if ev.CreatedAt > now+60 {
 			log.Debug("[nostrAuthMiddleware] invalid created_at")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		expirationTagValue := ""
-		tTagValue := ""
-		xTagValue := ""
-
-		for i := range ev.Tags {
-			if ev.Tags[i][0] == "expiration" && len(ev.Tags[i]) == 2 {
-				expirationTagValue = ev.Tags[i][1]
-			} else if ev.Tags[i][0] == "t" && len(ev.Tags[i]) == 2 {
-				tTagValue = ev.Tags[i][1]
-			} else if ev.Tags[i][0] == "x" && len(ev.Tags[i]) == 2 {
-				xTagValue = ev.Tags[i][1]
+		var expirationTag, tTag, xTag string
+		for _, tag := range ev.Tags {
+			if len(tag) != 2 {
+				continue
+			}
+			switch tag[0] {
+			case "expiration":
+				expirationTag = tag[1]
+			case "t":
+				tTag = tag[1]
+			case "x":
+				xTag = tag[1]
 			}
 		}
-		if expirationTagValue == "" || tTagValue == "" {
-			log.Debug("[nostrAuthMiddleware] missing `expiration` or `t` tags")
+		if expirationTag == "" || tTag == "" {
+			log.Debug("[nostrAuthMiddleware] missing expiration or t tag")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		n, _ := strconv.Atoi(expirationTagValue)
-		if time.Unix(int64(n), 0).Unix() < time.Now().Unix() {
+		expiration, err := strconv.ParseInt(expirationTag, 10, 64)
+		if err != nil || expiration < now {
 			log.Debug("[nostrAuthMiddleware] invalid expiration")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		if tTagValue != action {
+		if tTag != action {
 			log.Debug("[nostrAuthMiddleware] invalid action")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		if action == "upload" || action == "delete" {
-			if xTagValue == "" {
-				log.Debug("[nostrAuthMiddleware] action requires `x` tag")
-				c.AbortWithStatus(http.StatusUnauthorized)
-				return
-			}
+		if (action == "upload" || action == "delete") && xTag == "" {
+			log.Debug("[nostrAuthMiddleware] action requires x tag")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
 		}
 
-		c.Set("pk", ev.PubKey)
-		c.Set("x", xTagValue)
+		c.Set("pk", strings.ToLower(ev.PubKey))
+		c.Set("x", strings.ToLower(xTag))
 
 		c.Next()
 	}

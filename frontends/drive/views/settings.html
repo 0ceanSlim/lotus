@@ -1,0 +1,85 @@
+{{define "title"}}Settings{{end}}
+
+{{define "view"}}
+<div id="settings" class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-bold">Settings</h1>
+
+  <!-- Blossom server list (kind 10063). Rendered by media-servers.js. -->
+  <section class="p-5 mt-6 border rounded-lg bg-surface border-border">
+    <h2 class="text-lg font-semibold">🌸 Your Blossom servers</h2>
+    <p class="mt-1 text-sm text-text-secondary">
+      Nostr clients upload to the servers in this list, the first one first and the rest as mirrors.
+      Put this server at the top and your attachments land here.
+    </p>
+
+    <div id="ms-this" class="items-center justify-between hidden gap-3 p-3 mt-4 text-sm border rounded-lg bg-accent-dim border-accent">
+      <div class="min-w-0">
+        <span class="font-medium text-text">This server</span>
+        <code id="ms-this-url" class="ml-1 font-mono text-xs"></code>
+        <span id="ms-this-state" class="block mt-0.5 text-text-secondary"></span>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button id="ms-add-this" type="button" class="hidden px-3 py-1.5 text-sm rounded-md bg-accent text-accent-fg hover:bg-accent-hover">Add this server</button>
+        <button id="ms-primary-this" type="button" class="hidden px-3 py-1.5 text-sm border rounded-md border-border-strong text-text hover:bg-surface-hover">Make primary</button>
+      </div>
+    </div>
+
+    <div id="ms-list" class="mt-4 space-y-2"></div>
+
+    <div class="flex gap-2 mt-3">
+      <input id="ms-input" type="text" placeholder="Add a Blossom server by URL…" autocomplete="off"
+        class="flex-1 px-3 py-2 text-sm border rounded-md bg-surface-elevated text-text border-border" />
+      <button id="ms-add" type="button" class="px-4 py-2 text-sm border rounded-md border-border-strong text-text hover:bg-surface-hover">+ Add</button>
+    </div>
+    <p class="mt-2 text-xs text-text-muted">
+      Looking for others? Browse
+      <a href="https://blossomservers.com" target="_blank" rel="noopener" class="text-text hover:text-accent">blossomservers.com ↗</a>.
+      Drag the ⠿ handle to reorder.
+    </p>
+
+    <div class="flex items-center justify-between gap-3 pt-3 mt-4 border-t border-border">
+      <p id="ms-status" class="text-xs text-text-muted">Saving publishes your kind 10063 list to your relays.</p>
+      <button id="ms-save" type="button" disabled class="px-4 py-2 text-sm rounded-md bg-accent text-accent-fg hover:bg-accent-hover">Save &amp; sign</button>
+    </div>
+  </section>
+
+  <!-- Account -->
+  <section class="p-5 mt-6 border rounded-lg bg-surface border-border">
+    <h2 class="text-lg font-semibold">Account</h2>
+    <dl class="mt-3 space-y-3 text-sm">
+      <div class="flex flex-wrap items-baseline gap-2">
+        <dt class="w-28 shrink-0 text-text-secondary">npub</dt>
+        <dd class="flex items-center flex-1 min-w-0 gap-2">
+          <code id="acct-npub" class="flex-1 min-w-0 font-mono text-xs truncate">—</code>
+          <button type="button" data-copy="#acct-npub" class="px-2 py-1 text-xs border rounded border-border-strong hover:bg-surface-hover">Copy</button>
+        </dd>
+      </div>
+      <div class="flex flex-wrap items-baseline gap-2">
+        <dt class="w-28 shrink-0 text-text-secondary">Hex pubkey</dt>
+        <dd class="flex items-center flex-1 min-w-0 gap-2">
+          <code id="acct-hex" class="flex-1 min-w-0 font-mono text-xs truncate">—</code>
+          <button type="button" data-copy="#acct-hex" class="px-2 py-1 text-xs border rounded border-border-strong hover:bg-surface-hover">Copy</button>
+        </dd>
+      </div>
+      <div class="flex flex-wrap items-baseline gap-2">
+        <dt class="w-28 shrink-0 text-text-secondary">Signing with</dt>
+        <dd id="acct-method" class="text-text">—</dd>
+      </div>
+      <div class="flex flex-wrap items-baseline gap-2">
+        <dt class="w-28 shrink-0 text-text-secondary">Storage here</dt>
+        <dd id="acct-storage" class="text-text">—</dd>
+      </div>
+    </dl>
+    <div class="pt-4 mt-4 border-t border-border">
+      <button type="button" onclick="logoutUser()" class="px-4 py-2 text-sm rounded-md text-danger hover:bg-danger-dim">Sign out</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    function go() { if (window.LotusSettings) window.LotusSettings.init(); }
+    if (window.LotusSettings) go(); else document.addEventListener("DOMContentLoaded", go);
+  })();
+</script>
+{{end}}

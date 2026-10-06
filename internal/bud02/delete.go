@@ -32,5 +32,10 @@ func DeleteBlob(
 		return err
 	}
 
+	// Short links to a removed blob would only ever 404; drop them with it.
+	if links := services.ShortLinks(); links != nil {
+		_ = links.DeleteForHash(ctx, hash)
+	}
+
 	return nil
 }

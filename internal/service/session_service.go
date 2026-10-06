@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/0ceanslim/grain/client/core/tools"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcutil/bech32"
 	"go.uber.org/zap"
 
 	"github.com/0ceanSlim/lotus/internal/core"
@@ -164,29 +162,15 @@ func (s *sessionService) CleanupExpiredSessions(ctx context.Context) error {
 }
 
 func (s *sessionService) GenerateKeyPair() (*core.KeyPair, error) {
-	privKey, err := btcec.NewPrivateKey()
+	kp, err := tools.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
-
-	sk := hex.EncodeToString(privKey.Serialize())
-	pk := hex.EncodeToString(privKey.PubKey().SerializeCompressed()[1:])
-
-	nsec, err := encodePrivateKey(sk)
-	if err != nil {
-		return nil, err
-	}
-
-	npub, err := tools.EncodePubkey(pk)
-	if err != nil {
-		return nil, err
-	}
-
 	return &core.KeyPair{
-		Npub:       npub,
-		Nsec:       nsec,
-		HexPubkey:  pk,
-		HexPrivkey: sk,
+		Npub:       kp.Npub,
+		Nsec:       kp.Nsec,
+		HexPubkey:  kp.PublicKey,
+		HexPrivkey: kp.PrivateKey,
 	}, nil
 }
 
@@ -208,11 +192,11 @@ func (s *sessionService) DecodePublicKey(pubkeyStr string) (string, error) {
 
 func (s *sessionService) DecodePrivateKey(privkeyStr string) (string, error) {
 	if len(privkeyStr) > 4 && privkeyStr[:4] == "nsec" {
-		sk, err := decodePrivateKey(privkeyStr)
+		sk, err := tools.DecodeNsec(privkeyStr)
 		if err != nil {
 			return "", err
 		}
-		return sk, nil
+		return strings.ToLower(sk), nil
 	}
 
 	if len(privkeyStr) == 64 {
@@ -227,16 +211,7 @@ func (s *sessionService) GetPublicKeyFromPrivateKey(privkey string) (string, err
 	if err != nil {
 		return "", err
 	}
-
-	privKeyBytes, err := hex.DecodeString(sk)
-	if err != nil {
-		return "", err
-	}
-
-	privKeyObj, _ := btcec.PrivKeyFromBytes(privKeyBytes)
-	pk := hex.EncodeToString(privKeyObj.PubKey().SerializeCompressed()[1:])
-
-	return pk, nil
+	return tools.DerivePublicKey(sk)
 }
 
 func (s *sessionService) startCleanupRoutine() {
@@ -269,36 +244,4 @@ func generateSessionID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
-}
-
-func encodePrivateKey(hexPrivKey string) (string, error) {
-	decoded, err := hex.DecodeString(hexPrivKey)
-	if err != nil {
-		return "", err
-	}
-
-	encoded, err := bech32.ConvertBits(decoded, 8, 5, true)
-	if err != nil {
-		return "", err
-	}
-
-	return bech32.Encode("nsec", encoded)
-}
-
-func decodePrivateKey(nsec string) (string, error) {
-	hrp, data, err := bech32.Decode(nsec)
-	if err != nil {
-		return "", err
-	}
-
-	if hrp != "nsec" {
-		return "", errors.New("invalid hrp, expected nsec")
-	}
-
-	decodedData, err := bech32.ConvertBits(data, 5, 8, false)
-	if err != nil {
-		return "", err
-	}
-
-	return strings.ToLower(hex.EncodeToString(decodedData)), nil
 }

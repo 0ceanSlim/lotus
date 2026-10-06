@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -12,10 +13,10 @@ import (
 )
 
 type mimeTypeService struct {
+	mu       sync.RWMutex
 	allowed  map[string]struct{}
 	allowAll bool
 	queries  *db.Queries
-	conf     *config.Config
 	log      *zap.Logger
 }
 
@@ -25,28 +26,40 @@ func NewMimeTypeService(
 	conf *config.Config,
 	log *zap.Logger,
 ) (core.MimeTypeService, error) {
+	s := &mimeTypeService{queries: queries, log: log}
+	if err := s.Reload(ctx, conf.AllowedMimeTypes); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Reload replaces the allow list. Every named type must exist in the
+// server's MIME table, so a typo is rejected rather than silently blocking
+// uploads.
+func (s *mimeTypeService) Reload(ctx context.Context, types []string) error {
 	allowed := make(map[string]struct{})
 	allowAll := false
 
-	if len(conf.AllowedMimeTypes) == 1 && conf.AllowedMimeTypes[0] == "*" {
+	if len(types) == 1 && types[0] == "*" {
 		allowAll = true
 	} else {
-		for _, mime := range conf.AllowedMimeTypes {
-			_, err := queries.GetMimeType(ctx, mime)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", mime, core.ErrInvalidMimeType)
+		for _, mime := range types {
+			if mime == "*" {
+				allowAll = true
+				continue
+			}
+			if _, err := s.queries.GetMimeType(ctx, mime); err != nil {
+				return fmt.Errorf("%s: %w", mime, core.ErrInvalidMimeType)
 			}
 			allowed[mime] = struct{}{}
 		}
 	}
 
-	return &mimeTypeService{
-		allowed:  allowed,
-		allowAll: allowAll,
-		queries:  queries,
-		conf:     conf,
-		log:      log,
-	}, nil
+	s.mu.Lock()
+	s.allowed = allowed
+	s.allowAll = allowAll
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *mimeTypeService) Get(ctx context.Context, mimeType string) (*core.MimeType, error) {
@@ -55,15 +68,15 @@ func (s *mimeTypeService) Get(ctx context.Context, mimeType string) (*core.MimeT
 }
 
 func (s *mimeTypeService) IsAllowed(ctx context.Context, mimeType string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	if s.allowAll {
 		return nil
 	}
-
-	_, ok := s.allowed[mimeType]
-	if !ok {
+	if _, ok := s.allowed[mimeType]; !ok {
 		return core.ErrMimeTypeNotAllowed
 	}
-
 	return nil
 }
 

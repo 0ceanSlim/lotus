@@ -1,0 +1,299 @@
+/* Lotus design tokens.
+ *
+ * Every color, radius, shadow and font is a CSS variable on :root and
+ * restated per theme under :root[data-theme="<id>"]. The Tailwind @theme
+ * block in layout.html registers the same names so utilities exist; they
+ * resolve through var(--color-*) at runtime, so switching data-theme retints
+ * the whole page, mill's sign-in modal included, with no rebuild.
+ *
+ * The namespace mirrors grain's so templates and scripts port between the
+ * two projects unchanged:
+ *   surface-base | surface | surface-elevated | surface-overlay
+ *     | surface-inset | surface-inset-strong | surface-hover | surface-active
+ *   text | text-secondary | text-muted | text-on-accent
+ *   border | border-strong | border-focus
+ *   accent | accent-hover | accent-dim | accent-fg | accent-2 | accent-2-dim
+ *   success / warning / danger / info (+ -dim) | backdrop
+ *
+ * Adding a theme: add a :root[data-theme="<id>"] block here and register
+ * the id in static/js/theme.js.
+ */
+
+@layer theme, base, components, utilities;
+
+/* Lotus: the default. Near-black surfaces with a faint plum cast and a hot
+ * lotus-pink accent. Values are plain sRGB hex so the look is the same on
+ * every display and browser. */
+:root,
+:root[data-theme="lotus"] {
+  color-scheme: dark;
+  --color-surface-base: #0a0609;
+  --color-surface: #110b12;
+  --color-surface-elevated: #18101a;
+  --color-surface-overlay: #221626;
+  --color-surface-inset: rgb(0 0 0 / 0.3);
+  --color-surface-inset-strong: rgb(0 0 0 / 0.45);
+
+  --color-text: #f7ecf3;
+  --color-text-secondary: #c498b8;
+  --color-text-muted: #75607a;
+  --color-text-on-accent: #1a0612;
+
+  --color-border: #2a1c2d;
+  --color-border-strong: #3f2a43;
+  --color-border-focus: #ff7ac6;
+
+  --color-accent: #ff5cb8;
+  --color-accent-hover: #ff7ac6;
+  --color-accent-dim: rgb(255 92 184 / 0.16);
+  --color-accent-fg: #1a0612;
+  --color-accent-2: #4fd6d0;
+  --color-accent-2-dim: rgb(79 214 208 / 0.14);
+
+  --color-success: oklch(0.72 0.19 155);
+  --color-success-dim: oklch(0.72 0.19 155 / 0.13);
+  --color-warning: oklch(0.8 0.17 70);
+  --color-warning-dim: oklch(0.8 0.17 70 / 0.13);
+  --color-danger: oklch(0.66 0.23 20);
+  --color-danger-dim: oklch(0.66 0.23 20 / 0.13);
+  --color-info: oklch(0.72 0.15 235);
+  --color-info-dim: oklch(0.72 0.15 235 / 0.13);
+  --color-backdrop: rgb(4 2 5 / 0.82);
+
+  /* Interaction states derive from the palette so a theme that doesn't
+   * restate them still gets sensible values. */
+  --color-link: var(--color-accent);
+  --color-link-hover: var(--color-accent-hover);
+  --color-selection-bg: rgb(255 92 184 / 0.35);
+  --color-selection-fg: var(--color-text);
+  --color-surface-hover: var(--color-surface-overlay);
+  --color-surface-active: var(--color-surface-elevated);
+  --color-text-disabled: var(--color-text-muted);
+  --color-scrollbar-track: var(--color-surface);
+  --color-scrollbar-thumb: var(--color-border-strong);
+  --color-scrollbar-thumb-hover: var(--color-text-muted);
+  --color-code-bg: var(--color-surface-inset-strong);
+
+  --motion-fast: 100ms;
+  --motion: 180ms;
+  --motion-slow: 280ms;
+
+  --shadow-focus: 0 0 0 3px var(--color-accent-dim), 0 0 0 1px var(--color-accent);
+
+  --font-sans: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  --radius-sm: 0.375rem;
+  --radius: 0.625rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+  --radius-pill: 9999px;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.45);
+  --shadow: 0 8px 24px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 0 0 1px rgb(255 92 184 / 0.1), 0 24px 64px rgb(0 0 0 / 0.75), 0 0 80px rgb(255 92 184 / 0.06);
+}
+
+/* Dark: a neutral graphite with a muted slate accent. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-surface-base: #0a0a0b;
+  --color-surface: #101012;
+  --color-surface-elevated: #17171a;
+  --color-surface-overlay: #202024;
+  --color-text: #ededf0;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #6b6b73;
+  --color-text-on-accent: #ffffff;
+  --color-border: #26262b;
+  --color-border-strong: #37373e;
+  --color-border-focus: oklch(0.66 0.05 250);
+  --color-accent: oklch(0.57 0.04 250);
+  --color-accent-hover: oklch(0.66 0.045 250);
+  --color-accent-dim: oklch(0.57 0.04 250 / 0.18);
+  --color-accent-fg: #ffffff;
+  --color-selection-bg: oklch(0.57 0.04 250 / 0.35);
+  --color-backdrop: rgb(0 0 0 / 0.8);
+  --shadow-lg: 0 0 0 1px rgb(255 255 255 / 0.05), 0 24px 64px rgb(0 0 0 / 0.7);
+}
+
+/* Light: warm paper with the lotus accent darkened for contrast. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-surface-base: #f7f3f6;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f3edf1;
+  --color-surface-overlay: #eae2e7;
+  --color-surface-inset: rgb(0 0 0 / 0.04);
+  --color-surface-inset-strong: rgb(0 0 0 / 0.07);
+  --color-text: #221a21;
+  --color-text-secondary: #6b5a67;
+  --color-text-muted: #a2929e;
+  --color-text-on-accent: #ffffff;
+  --color-border: #e4dbe1;
+  --color-border-strong: #cdc0c9;
+  --color-border-focus: oklch(0.6 0.2 350);
+  --color-accent: oklch(0.6 0.2 350);
+  --color-accent-hover: oklch(0.54 0.2 350);
+  --color-accent-dim: oklch(0.6 0.2 350 / 0.12);
+  --color-accent-fg: #ffffff;
+  --color-accent-2: oklch(0.58 0.12 190);
+  --color-accent-2-dim: oklch(0.58 0.12 190 / 0.12);
+  --color-success: oklch(0.58 0.17 155);
+  --color-success-dim: oklch(0.58 0.17 155 / 0.12);
+  --color-warning: oklch(0.7 0.16 70);
+  --color-warning-dim: oklch(0.7 0.16 70 / 0.14);
+  --color-danger: oklch(0.58 0.22 20);
+  --color-danger-dim: oklch(0.58 0.22 20 / 0.12);
+  --color-info: oklch(0.6 0.15 235);
+  --color-info-dim: oklch(0.6 0.15 235 / 0.12);
+  --color-backdrop: rgb(40 20 35 / 0.5);
+  --color-selection-bg: oklch(0.6 0.2 350 / 0.25);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
+  --shadow: 0 8px 24px rgb(20 10 18 / 0.12);
+  --shadow-lg: 0 0 0 1px rgb(0 0 0 / 0.05), 0 24px 64px rgb(20 10 18 / 0.14);
+}
+
+/* Grain: wheat-tinted neutrals with the sunlit green accent. */
+:root[data-theme="grain"] {
+  color-scheme: dark;
+  --color-surface-base: #0d0f0c;
+  --color-surface: #141710;
+  --color-surface-elevated: #1a1f16;
+  --color-surface-overlay: #222820;
+  --color-text: #e8f0e4;
+  --color-text-secondary: #8ea882;
+  --color-text-muted: #506048;
+  --color-text-on-accent: #0d0f0c;
+  --color-border: #2c3226;
+  --color-border-strong: #3d4736;
+  --color-border-focus: oklch(0.85 0.22 130);
+  --color-accent: oklch(0.78 0.22 130);
+  --color-accent-hover: oklch(0.85 0.22 130);
+  --color-accent-dim: oklch(0.78 0.22 130 / 0.14);
+  --color-accent-fg: #0d0f0c;
+  --color-accent-2: oklch(0.72 0.18 175);
+  --color-accent-2-dim: oklch(0.72 0.18 175 / 0.13);
+  --color-success: oklch(0.78 0.22 130);
+  --color-success-dim: oklch(0.78 0.22 130 / 0.13);
+  --color-selection-bg: oklch(0.78 0.22 130 / 0.3);
+  --color-backdrop: rgb(8 12 6 / 0.78);
+  --shadow-lg: 0 0 0 1px rgb(170 220 130 / 0.1), 0 24px 64px rgb(0 0 0 / 0.7);
+}
+
+/* Midnight: deep blue-purple with a lavender accent. */
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+  --color-surface-base: #0c0a1e;
+  --color-surface: #14122e;
+  --color-surface-elevated: #1c1a3a;
+  --color-surface-overlay: #25224a;
+  --color-text: #d8d5ff;
+  --color-text-secondary: #a8a3d4;
+  --color-text-muted: #6a648f;
+  --color-text-on-accent: #0c0a1e;
+  --color-border: #2a2754;
+  --color-border-strong: #3e3970;
+  --color-border-focus: oklch(0.75 0.22 265);
+  --color-accent: oklch(0.7 0.22 265);
+  --color-accent-hover: oklch(0.78 0.22 265);
+  --color-accent-dim: oklch(0.7 0.22 265 / 0.15);
+  --color-accent-fg: #0c0a1e;
+  --color-accent-2: oklch(0.72 0.16 215);
+  --color-accent-2-dim: oklch(0.72 0.16 215 / 0.15);
+  --color-selection-bg: oklch(0.7 0.22 265 / 0.35);
+  --color-backdrop: rgb(2 2 12 / 0.82);
+  --shadow-lg: 0 0 0 1px rgb(120 100 255 / 0.1), 0 24px 64px rgb(0 0 0 / 0.75);
+}
+
+@layer base {
+  body {
+    background: var(--color-surface-base);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    transition: background-color var(--motion) ease, color var(--motion) ease;
+  }
+
+  ::selection {
+    background: var(--color-selection-bg);
+    color: var(--color-selection-fg);
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: var(--radius-sm);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+  }
+
+  input:disabled,
+  textarea:disabled,
+  select:disabled,
+  button:disabled {
+    color: var(--color-text-disabled);
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  * {
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+    scrollbar-width: thin;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-scrollbar-thumb);
+    border-radius: var(--radius-pill);
+    border: 2px solid var(--color-scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-scrollbar-thumb-hover);
+  }
+
+  code {
+    font-family: var(--font-mono);
+  }
+
+  /* Mill's sign-in modal lives in a shadow DOM and reads --mill-* variables.
+   * Custom properties inherit across the shadow boundary, so mapping them on
+   * the host element renders mill in the active theme. */
+  nostr-signer {
+    --mill-bg: var(--color-surface-base);
+    --mill-surface: var(--color-surface);
+    --mill-card: var(--color-surface-elevated);
+    --mill-card-hover: var(--color-surface-hover);
+    --mill-inset: var(--color-surface-inset);
+    --mill-inset-strong: var(--color-surface-inset-strong);
+    --mill-overlay: var(--color-backdrop);
+    --mill-border: var(--color-border);
+    --mill-border-light: var(--color-border-strong);
+    --mill-accent: var(--color-accent);
+    --mill-accent-hover: var(--color-accent-hover);
+    --mill-accent-dim: var(--color-accent-dim);
+    --mill-teal: var(--color-accent-2);
+    --mill-teal-dim: var(--color-accent-2-dim);
+    --mill-text: var(--color-text);
+    --mill-text-secondary: var(--color-text-secondary);
+    --mill-muted: var(--color-text-muted);
+    --mill-danger: var(--color-danger);
+    --mill-danger-dim: var(--color-danger-dim);
+    --mill-warning: var(--color-warning);
+    --mill-warning-dim: var(--color-warning-dim);
+    --mill-success: var(--color-success);
+    --mill-success-dim: var(--color-success-dim);
+    --mill-radius: var(--radius);
+    --mill-font: var(--font-sans);
+    --mill-font-mono: var(--font-mono);
+  }
+}

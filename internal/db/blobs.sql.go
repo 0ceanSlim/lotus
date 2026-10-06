@@ -186,3 +186,42 @@ func (q *Queries) GetTotalBlobsCount(ctx context.Context) (int64, error) {
 	err := row.Scan(&total)
 	return total, err
 }
+
+const listBlobMetaByPubkey = `-- name: ListBlobMetaByPubkey :many
+select pubkey, hash, type, size, created
+from blobs
+where pubkey = ?
+order by created desc
+`
+
+// BlobMeta is a blob row without its bytes.
+type BlobMeta struct {
+	Pubkey  string
+	Hash    string
+	Type    string
+	Size    int64
+	Created int64
+}
+
+func (q *Queries) ListBlobMetaByPubkey(ctx context.Context, pubkey string) ([]BlobMeta, error) {
+	rows, err := q.db.QueryContext(ctx, listBlobMetaByPubkey, pubkey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BlobMeta
+	for rows.Next() {
+		var i BlobMeta
+		if err := rows.Scan(&i.Pubkey, &i.Hash, &i.Type, &i.Size, &i.Created); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 
@@ -15,8 +16,13 @@ type blobService struct {
 	db                       *sql.DB
 	queries                  *db.Queries
 	cdnBaseUrl               string
-	maxStoragePerPubkeyBytes int64
+	maxStoragePerPubkeyBytes atomic.Int64
 	log                      *zap.Logger
+}
+
+// SetQuota changes the per-pubkey storage quota; zero disables it.
+func (r *blobService) SetQuota(bytes int64) {
+	r.maxStoragePerPubkeyBytes.Store(bytes)
 }
 
 func NewBlobService(
@@ -26,13 +32,14 @@ func NewBlobService(
 	maxStoragePerPubkeyBytes int64,
 	log *zap.Logger,
 ) (core.BlobStorage, error) {
-	return &blobService{
-		db:                       database,
-		queries:                  queries,
-		cdnBaseUrl:               cdnBaseUrl,
-		maxStoragePerPubkeyBytes: maxStoragePerPubkeyBytes,
-		log:                      log,
-	}, nil
+	s := &blobService{
+		db:         database,
+		queries:    queries,
+		cdnBaseUrl: cdnBaseUrl,
+		log:        log,
+	}
+	s.SetQuota(maxStoragePerPubkeyBytes)
+	return s, nil
 }
 
 func (r *blobService) Save(
@@ -96,12 +103,48 @@ func (r *blobService) GetFromPubkey(ctx context.Context, pubkey string) ([]*core
 	return blobs, nil
 }
 
+func (r *blobService) ListMeta(ctx context.Context, pubkey string) ([]*core.Blob, error) {
+	rows, err := r.queries.ListBlobMetaByPubkey(ctx, pubkey)
+	if err != nil {
+		return nil, err
+	}
+	blobs := make([]*core.Blob, len(rows))
+	for i, row := range rows {
+		url := bloburl.Build(r.cdnBaseUrl, row.Hash, row.Type)
+		blobs[i] = &core.Blob{
+			Pubkey:   row.Pubkey,
+			Url:      url,
+			Sha256:   row.Hash,
+			Size:     row.Size,
+			Type:     row.Type,
+			Uploaded: row.Created,
+		}
+	}
+	return blobs, nil
+}
+
+func (r *blobService) Meta(ctx context.Context, sha256 string) (*core.Blob, error) {
+	row, err := r.queries.GetBlobMetaByHash(ctx, sha256)
+	if err != nil {
+		return nil, core.ErrBlobNotFound
+	}
+	return &core.Blob{
+		Pubkey:   row.Pubkey,
+		Url:      bloburl.Build(r.cdnBaseUrl, row.Hash, row.Type),
+		Sha256:   row.Hash,
+		Size:     row.Size,
+		Type:     row.Type,
+		Uploaded: row.Created,
+	}, nil
+}
+
 func (r *blobService) DeleteFromHash(ctx context.Context, sha256 string) error {
 	return r.queries.DeleteBlobFromHash(ctx, sha256)
 }
 
 func (r *blobService) ValidateStorageQuota(ctx context.Context, pubkey string, newFileSize int64) error {
-	if r.maxStoragePerPubkeyBytes <= 0 {
+	quota := r.maxStoragePerPubkeyBytes.Load()
+	if quota <= 0 {
 		return nil
 	}
 
@@ -110,7 +153,7 @@ func (r *blobService) ValidateStorageQuota(ctx context.Context, pubkey string, n
 		return err
 	}
 
-	if currentStorage+newFileSize > r.maxStoragePerPubkeyBytes {
+	if currentStorage+newFileSize > quota {
 		return core.ErrStorageQuotaExceeded
 	}
 
@@ -120,6 +163,7 @@ func (r *blobService) ValidateStorageQuota(ctx context.Context, pubkey string, n
 func (r *blobService) dbBlobIntoBlobDescriptor(blob db.Blob) *core.Blob {
 	url := bloburl.Build(r.cdnBaseUrl, blob.Hash, blob.Type)
 	return &core.Blob{
+		Pubkey:   blob.Pubkey,
 		Url:      url,
 		Sha256:   blob.Hash,
 		Size:     blob.Size,

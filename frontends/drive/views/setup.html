@@ -1,0 +1,46 @@
+{{define "title"}}Setup{{end}}
+
+{{define "view"}}
+<!-- First-run claim. Whoever signs in and claims first becomes the operator;
+     the server stays loudly unclaimed on every page until then. -->
+<div class="max-w-xl py-10 mx-auto text-center">
+  <div class="text-5xl">🪷</div>
+  <h1 class="mt-3 text-3xl font-bold">First-run setup</h1>
+  <p class="mt-4 text-text-secondary">
+    This server has no operator yet. Sign in with any Nostr signer to claim it.
+    Your key becomes the admin key, gets upload access, and the admin page opens to you only.
+  </p>
+  <p class="mt-2 text-sm text-warning">
+    Whoever claims first becomes the operator. Claim now before anyone else does.
+  </p>
+
+  <div class="mt-8">
+    <button id="setup-claim-btn" type="button" class="px-5 py-2.5 text-sm font-medium rounded-md bg-accent text-accent-fg hover:bg-accent-hover">
+      Sign in &amp; claim
+    </button>
+  </div>
+
+  <div id="setup-success" class="hidden p-4 mt-8 text-sm rounded-md bg-success-dim text-success">
+    Claimed. Opening the admin page…
+  </div>
+  <div id="setup-conflict" class="hidden p-4 mt-8 text-sm text-left rounded-md bg-danger-dim text-danger">
+    <p class="font-medium">Someone else just claimed this server.</p>
+    <p class="mt-2">
+      Claimed by <span id="setup-conflict-npub" class="font-mono break-all"></span>.
+      If that's not you, stop the server, clear <code>admin_pubkey</code> in <code>config.yml</code>, start it again and claim immediately.
+    </p>
+  </div>
+  <div id="setup-error" class="hidden p-4 mt-8 text-sm rounded-md bg-danger-dim text-danger"></div>
+
+  <p class="mt-10 text-xs text-text-muted">
+    Prefer the file? Set <code>admin_pubkey</code> to your hex pubkey in <code>config.yml</code> and restart.
+  </p>
+</div>
+
+<script>
+  (function () {
+    function go() { if (window.LotusSetup) window.LotusSetup.init(); }
+    if (window.LotusSetup) go(); else document.addEventListener("DOMContentLoaded", go);
+  })();
+</script>
+{{end}}

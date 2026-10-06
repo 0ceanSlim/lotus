@@ -1,15 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
-	"go.uber.org/zap"
-	"github.com/gin-gonic/gin"
 	"github.com/0ceanslim/grain/client/cache"
 	"github.com/0ceanslim/grain/client/connection"
-	"github.com/0ceanslim/grain/client/core"
 	"github.com/0ceanslim/grain/client/core/tools"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type ProfileMetadata struct {
@@ -23,11 +24,6 @@ type ProfileMetadata struct {
 }
 
 func getProfile(log *zap.Logger) gin.HandlerFunc {
-	indexRelays := []string{
-		"wss://purplepag.es",
-		"wss://wheat.happytavern.co",
-	}
-
 	return func(ctx *gin.Context) {
 		npub := ctx.Query("npub")
 		if npub == "" {
@@ -62,15 +58,13 @@ func getProfile(log *zap.Logger) gin.HandlerFunc {
 
 		coreClient := connection.GetCoreClient()
 		if coreClient == nil {
-			config := core.DefaultConfig()
-			coreClient = core.NewClient(config)
-
-			if err := coreClient.ConnectToRelays(indexRelays); err != nil {
-				log.Warn("Failed to connect to index relays", zap.Error(err))
-			}
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Nostr client not initialized"})
+			return
 		}
 
-		metadataEvent, err := coreClient.GetUserProfile(pubkey, indexRelays)
+		fetchCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
+		defer cancel()
+		metadataEvent, err := coreClient.GetUserProfile(fetchCtx, pubkey, connection.GetIndexRelays())
 		if err != nil || metadataEvent == nil {
 			log.Error("Failed to fetch profile from relays", zap.String("pubkey", pubkey), zap.Error(err))
 			ctx.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Profile not found on relays"})

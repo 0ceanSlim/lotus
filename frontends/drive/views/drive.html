@@ -1,0 +1,111 @@
+{{define "title"}}Drive{{end}}
+
+{{define "view"}}
+<!-- The drive: every blob this pubkey has on this server, newest first.
+     Most arrive from other Nostr clients with no name or folder, so the
+     default view is a filterable timeline rather than a tree. -->
+<div id="drive" class="relative">
+  <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+    <div>
+      <h1 class="text-2xl font-bold">Your files</h1>
+      <div class="mt-1 text-sm text-text-secondary">
+        <span data-drive="count">—</span> files ·
+        <span data-drive="used">—</span><span data-drive="quota-label"></span>
+      </div>
+      <div class="w-56 h-1.5 mt-2 overflow-hidden rounded-full bg-surface-inset">
+        <div data-drive="bar" class="h-full transition-all rounded-full bg-accent" style="width: 0%"></div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" id="drive-upload-btn" class="px-4 py-2 text-sm font-medium rounded-md bg-accent text-accent-fg hover:bg-accent-hover">
+        ⬆ Upload
+      </button>
+      <input type="file" id="drive-file-input" multiple class="hidden" />
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <div id="drive-filters" class="flex items-center gap-1 p-0.5 text-sm rounded-md bg-surface-inset">
+      <button data-filter="all" class="px-3 py-1 rounded bg-accent text-accent-fg">All</button>
+      <button data-filter="image" class="px-3 py-1 rounded text-text-secondary hover:text-text">Images</button>
+      <button data-filter="video" class="px-3 py-1 rounded text-text-secondary hover:text-text">Video</button>
+      <button data-filter="audio" class="px-3 py-1 rounded text-text-secondary hover:text-text">Audio</button>
+      <button data-filter="other" class="px-3 py-1 rounded text-text-secondary hover:text-text">Other</button>
+    </div>
+    <input
+      id="drive-search"
+      type="search"
+      placeholder="Search by hash or type"
+      class="px-3 py-1.5 text-sm border rounded-md bg-surface-elevated border-border w-60"
+      autocomplete="off"
+    />
+  </div>
+
+  <!-- Shown when this server isn't in the user's Blossom server list. -->
+  <div id="drive-server-banner" class="items-center justify-between hidden gap-3 p-3 mb-4 text-sm border rounded-lg bg-accent-dim border-accent">
+    <div class="min-w-0">
+      <span class="font-medium text-text">This server isn't in your Blossom server list.</span>
+      <span class="text-text-secondary">Add it and your Nostr clients will upload here.</span>
+      <span data-banner-status class="block mt-0.5 text-xs text-text-secondary"></span>
+    </div>
+    <div class="flex gap-2 shrink-0">
+      <button type="button" data-banner="add" class="px-3 py-1.5 rounded-md bg-accent text-accent-fg hover:bg-accent-hover">Add this server</button>
+      <button type="button" data-banner="dismiss" class="px-3 py-1.5 rounded-md text-text-secondary hover:text-text hover:bg-surface-hover">Not now</button>
+    </div>
+  </div>
+
+  <!-- Upload queue -->
+  <div id="drive-uploads" class="hidden mb-4 space-y-2"></div>
+
+  <div id="drive-empty" class="hidden py-16 text-center border border-dashed rounded-lg border-border-strong">
+    <div class="text-4xl">📦</div>
+    <p class="mt-2 text-text-secondary">Nothing here yet. Upload a file, or attach one from any Nostr client that uses this server.</p>
+  </div>
+
+  <div id="drive-grid" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"></div>
+
+  <!-- Drag-and-drop overlay -->
+  <div id="drive-drop" class="fixed inset-0 z-40 items-center justify-center hidden text-lg font-medium border-4 border-dashed pointer-events-none bg-backdrop border-accent text-text">
+    Drop to upload
+  </div>
+
+  <!-- File detail modal -->
+  <div id="drive-modal" class="fixed inset-0 z-50 items-center justify-center hidden p-4 bg-backdrop">
+    <div class="w-full max-w-3xl overflow-hidden border rounded-lg shadow-lg bg-surface border-border">
+      <div class="flex items-center justify-center bg-surface-inset-strong max-h-[60vh]" data-modal="preview"></div>
+      <div class="p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-3 text-sm">
+          <span data-modal="type" class="px-2 py-0.5 text-xs rounded bg-surface-overlay"></span>
+          <span data-modal="size" class="text-text-secondary"></span>
+          <span data-modal="date" class="text-text-secondary"></span>
+        </div>
+        <div class="flex items-center gap-2 mb-2">
+          <code data-modal="url" class="flex-1 px-3 py-2 font-mono text-xs truncate border rounded-md bg-surface-inset border-border"></code>
+          <button type="button" data-modal="copy" class="px-3 py-2 text-sm border rounded-md border-border-strong hover:bg-surface-hover">Copy link</button>
+          <a data-modal="open" target="_blank" rel="noopener" class="px-3 py-2 text-sm border rounded-md border-border-strong hover:bg-surface-hover">Open</a>
+        </div>
+        <!-- Short link: an alias that redirects to the canonical URL above.
+             Created on demand, revocable, never affects the real link. -->
+        <div class="flex items-center gap-2 mb-4">
+          <code data-modal="short-url" class="flex-1 hidden px-3 py-2 font-mono text-xs truncate border rounded-md bg-surface-inset border-border"></code>
+          <span data-modal="short-empty" class="flex-1 text-xs text-text-muted">No short link yet.</span>
+          <button type="button" data-modal="short-create" class="px-3 py-2 text-sm border rounded-md border-border-strong hover:bg-surface-hover">Create short link</button>
+          <button type="button" data-modal="short-copy" class="hidden px-3 py-2 text-sm border rounded-md border-border-strong hover:bg-surface-hover">Copy short link</button>
+          <button type="button" data-modal="short-revoke" class="hidden px-3 py-2 text-sm rounded-md text-text-secondary hover:text-danger hover:bg-danger-dim" title="Revoke this short link">Revoke</button>
+        </div>
+        <div class="flex items-center justify-between">
+          <button type="button" data-modal="delete" class="px-3 py-2 text-sm rounded-md text-danger hover:bg-danger-dim">Delete</button>
+          <button type="button" data-modal="close" class="px-3 py-2 text-sm rounded-md bg-surface-elevated hover:bg-surface-hover">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    function go() { if (window.LotusDrive) window.LotusDrive.init(); }
+    if (window.LotusDrive) go(); else document.addEventListener("DOMContentLoaded", go);
+  })();
+</script>
+{{end}}

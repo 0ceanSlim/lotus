@@ -103,6 +103,14 @@ func (s *zeroXZeroBlobService) GetFromPubkey(ctx context.Context, pubkey string)
 	return blobs, nil
 }
 
+func (s *zeroXZeroBlobService) Meta(ctx context.Context, sha256 string) (*core.Blob, error) {
+	return s.GetFromHash(ctx, sha256)
+}
+
+func (s *zeroXZeroBlobService) ListMeta(ctx context.Context, pubkey string) ([]*core.Blob, error) {
+	return s.GetFromPubkey(ctx, pubkey)
+}
+
 func (s *zeroXZeroBlobService) DeleteFromHash(ctx context.Context, sha256 string) error {
 	row, err := s.queries.GetBlob0x0FromHash(ctx, sha256)
 	if err == nil {
@@ -118,6 +126,7 @@ func (s *zeroXZeroBlobService) ValidateStorageQuota(_ context.Context, _ string,
 func (s *zeroXZeroBlobService) dbBlobToDescriptor(row db.Blobs0x0) *core.Blob {
 	publicUrl := bloburl.Build(s.cdnBaseUrl, row.Hash, row.Type)
 	return &core.Blob{
+		Pubkey:      row.Pubkey,
 		Url:         publicUrl,
 		ExternalUrl: row.Url,
 		Sha256:      row.Hash,

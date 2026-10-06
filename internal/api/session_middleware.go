@@ -54,25 +54,3 @@ func sessionMiddleware(services core.Services, log *zap.Logger, required bool) g
 func requireSession(services core.Services, log *zap.Logger) gin.HandlerFunc {
 	return sessionMiddleware(services, log, true)
 }
-
-func optionalSession(services core.Services, log *zap.Logger) gin.HandlerFunc {
-	return sessionMiddleware(services, log, false)
-}
-
-func getSessionPublicKey(ctx *gin.Context) (string, bool) {
-	pubkey, exists := ctx.Get("public_key")
-	if !exists {
-		return "", false
-	}
-	pubkeyStr, ok := pubkey.(string)
-	return pubkeyStr, ok
-}
-
-func getSessionNpub(ctx *gin.Context) (string, bool) {
-	npub, exists := ctx.Get("npub")
-	if !exists {
-		return "", false
-	}
-	npubStr, ok := npub.(string)
-	return npubStr, ok
-}
