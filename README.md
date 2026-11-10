@@ -101,6 +101,8 @@ server:
 
 # Optional: auto-fetch allowed uploaders from a nostr.json
 # nostr_users_url: "https://your.domain.com/.well-known/nostr.json"
+# Several sources (union of all) may be separated by commas:
+# nostr_users_url: "https://a.example/.well-known/nostr.json, https://b.example/.well-known/nostr.json"
 
 # Optional: relays grain uses to resolve profiles and relay lists
 # index_relays: ["wss://purplepag.es", "wss://user.kindpag.es"]
@@ -211,7 +213,7 @@ go run ./cmd/lotus --data-dir .dev-data
 | `api_addr` | Address and port to listen on |
 | `cdn_url` | Base URL used to construct blob URLs in responses |
 | `admin_pubkey` | Hex pubkey of the operator. Empty means unclaimed; the first sign-in at `/setup` fills it. |
-| `nostr_users_url` | URL of a `.well-known/nostr.json` to auto-fetch allowed uploaders (refreshed every 5 min) |
+| `nostr_users_url` | URL of a `.well-known/nostr.json` to auto-fetch allowed uploaders, or several separated by commas (union; refreshed every 5 min, retried every 15s until each source has loaded once; a failing source keeps its last list) |
 | `max_upload_size_bytes` | Per-upload size limit |
 | `max_storage_per_pubkey_bytes` | Total storage quota per pubkey (`0` = unlimited) |
 | `access_control_rules` | List of ALLOW/DENY rules by pubkey and resource |
