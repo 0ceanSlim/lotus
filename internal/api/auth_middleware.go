@@ -38,7 +38,7 @@ func nostrAuthMiddleware(action string, log *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		eventBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(parts[1]))
+		eventBytes, err := decodeAuthToken(parts[1])
 		if err != nil {
 			log.Debug("[nostrAuthMiddleware] base64 decode event failed: " + err.Error())
 			c.AbortWithStatus(http.StatusUnauthorized)
@@ -115,4 +115,13 @@ func nostrAuthMiddleware(action string, log *zap.Logger) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// decodeAuthToken decodes the token of a Blossom Authorization header. BUD-11
+// requires base64url without padding, but clients also send standard base64,
+// with or without padding, so all of them are accepted.
+func decodeAuthToken(token string) ([]byte, error) {
+	token = strings.TrimSpace(token)
+	token = strings.NewReplacer("-", "+", "_", "/").Replace(token)
+	return base64.RawStdEncoding.DecodeString(strings.TrimRight(token, "="))
 }
