@@ -203,6 +203,8 @@ For a public, free-for-all server (anyone can mint a Nostr key, so a per-pubkey 
 
 Addresses are held only in memory, as keyed hashes under a secret the process draws at startup, and nothing about them is written to the database, the log or disk; while the limiter is on, the access log drops the client address too. Behind a Cloudflare tunnel or nginx on the same machine the real client comes from `CF-Connecting-IP` / `X-Real-IP`, which are believed only from loopback and `trusted_proxies`. The block is off by default; `internal/config/default.yml` documents every key and `HANDOFF.md` the design and the decisions behind the defaults.
 
+Storage is bounded per file (`max_upload_size_bytes`, enforced before the body is buffered), per pubkey (`max_storage_per_pubkey_bytes`) and, with `max_total_storage_bytes`, for the server as a whole; `when_full: evict` lets a full server make room by deleting the blobs with the largest age × size. `PUT /mirror` runs the same access rule, size limit and quota as an upload and only fetches from public addresses.
+
 ## Local development
 
 ```sh
@@ -221,8 +223,10 @@ go run ./cmd/lotus --data-dir .dev-data
 | `cdn_url` | Base URL used to construct blob URLs in responses |
 | `admin_pubkey` | Hex pubkey of the operator. Empty means unclaimed; the first sign-in at `/setup` fills it. |
 | `nostr_users_url` | URL of a `.well-known/nostr.json` to auto-fetch allowed uploaders, or several separated by commas (union; refreshed every 5 min, retried every 15s until each source has loaded once; a failing source keeps its last list) |
-| `max_upload_size_bytes` | Per-upload size limit |
-| `max_storage_per_pubkey_bytes` | Total storage quota per pubkey (`0` = unlimited) |
+| `max_upload_size_bytes` | Per-upload size limit; the request body is cut off there and a declared size over it gets 413 |
+| `max_storage_per_pubkey_bytes` | Total storage quota per pubkey (`0` = unlimited), on both backends |
+| `max_total_storage_bytes` | Cap on bytes stored by the whole server (`0` = no cap) |
+| `when_full` | At the cap: `refuse` (507 until space frees up) or `evict` (delete blobs ranked by age × size to make room; nothing is promised a storage time then) |
 | `access_control_rules` | List of ALLOW/DENY rules by pubkey and resource |
 | `allowed_mime_types` | List of accepted MIME types (`*` = any) |
 | `zero_x_zero` | 0x0.st backend config block (see above) |

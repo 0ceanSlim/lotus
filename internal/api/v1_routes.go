@@ -130,6 +130,14 @@ func v1Login(store *config.Store, log *zap.Logger) gin.HandlerFunc {
 	}
 }
 
+// whenFullLabel is "evict" or "refuse", the latter also when there is no cap.
+func whenFullLabel(conf config.Config) string {
+	if conf.EvictsWhenFull() {
+		return "evict"
+	}
+	return "refuse"
+}
+
 // grainSession returns the grain session for the request, if any.
 func grainSession(r *http.Request) *session.UserSession {
 	if session.SessionMgr == nil {
@@ -169,6 +177,10 @@ type serverInfoResponse struct {
 	// AnonymousUploads: the server's own frontend uploads with throwaway
 	// keys, and uploads are limited per network address rather than per key.
 	AnonymousUploads bool `json:"anonymous_uploads"`
+	// MaxTotalStorageBytes is the overall cap (0 = none) and WhenFull what
+	// happens at it: "refuse" or "evict".
+	MaxTotalStorageBytes int64  `json:"max_total_storage_bytes"`
+	WhenFull             string `json:"when_full"`
 }
 
 func serverInfo(store *config.Store) gin.HandlerFunc {
@@ -200,6 +212,8 @@ func serverInfo(store *config.Store) gin.HandlerFunc {
 			PublicListing:    conf.PublicListingEnabled(),
 			Claimed:          conf.Claimed(),
 			AnonymousUploads: conf.RateLimit.Enabled && conf.RateLimit.AnonymousUploads,
+			MaxTotalStorageBytes: conf.MaxTotalStorageBytes,
+			WhenFull:             whenFullLabel(conf),
 		}
 		resp.ProfileUrl = conf.ProfileURL("{npub}", "{hex}")
 		if conf.AdminPubkey != "" {

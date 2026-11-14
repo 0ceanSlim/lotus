@@ -91,6 +91,9 @@
 {{if .Limits.AnonymousUploads}}
 <p>drop a file. get a link. no account needed.</p>
 <p class="dim" style="margin-top:0.4rem;">a one-time key is made in your browser to sign the upload and forgotten unless you keep it. <a href="#" class="signin-link">sign in</a> to upload under your own nostr key instead. nothing here is permanent. that's the point.</p>
+{{if .Limits.Evicts}}
+<p class="dim" style="margin-top:0.4rem; font-size:12px;">when the server is full, the oldest and largest files are removed to make room. the retention curve is a ceiling, not a promise.</p>
+{{end}}
 {{else}}
 <p>drop a file. sign once with your nostr key. get a link.</p>
 <p class="dim" style="margin-top:0.4rem;">any nostr key works. nothing here is permanent. that's the point.</p>

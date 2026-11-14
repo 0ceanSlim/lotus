@@ -45,6 +45,55 @@ func TestRateLimitValidate(t *testing.T) {
 	}
 }
 
+func TestStorageCapValidationAndLabels(t *testing.T) {
+	base := func() Config {
+		return Config{MaxUploadSizeBytes: 10 << 20, AllowedMimeTypes: []string{"*"}}
+	}
+	c := base()
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if c.EvictsWhenFull() || c.Retention() != "permanent" {
+		t.Fatal("no cap must mean permanent, no eviction")
+	}
+
+	c = base()
+	c.WhenFull = "later"
+	if err := c.Validate(); err == nil {
+		t.Fatal("bad when_full accepted")
+	}
+	c = base()
+	c.MaxTotalStorageBytes = 1 << 20
+	if err := c.Validate(); err == nil {
+		t.Fatal("cap below the per-file limit accepted")
+	}
+	c = base()
+	c.MaxTotalStorageBytes = -1
+	if err := c.Validate(); err == nil {
+		t.Fatal("negative cap accepted")
+	}
+
+	c = base()
+	c.MaxTotalStorageBytes = 1 << 30
+	c.WhenFull = "Evict"
+	c.Normalize()
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !c.EvictsWhenFull() || c.Retention() != "best-effort" || c.WhenFull != "evict" {
+		t.Fatalf("evict: %v %q %q", c.EvictsWhenFull(), c.Retention(), c.WhenFull)
+	}
+	c.WhenFull = "refuse"
+	if c.EvictsWhenFull() || c.Retention() != "permanent" {
+		t.Fatal("refuse must not evict")
+	}
+	c.WhenFull = "evict"
+	c.ZeroXZero.Enabled = true
+	if c.Retention() != "ephemeral" {
+		t.Fatal("a 0x0 backend stays ephemeral")
+	}
+}
+
 func TestRateLimitWindowDuration(t *testing.T) {
 	if got := (RateLimitConfig{}).WindowDuration(); got != DefaultRateLimitWindow {
 		t.Fatalf("empty window = %s, want %s", got, DefaultRateLimitWindow)

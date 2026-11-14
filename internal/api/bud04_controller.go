@@ -17,25 +17,29 @@ func mirrorBlob(services core.Services, cdnBaseUrl string) gin.HandlerFunc {
 
 		if pubkey == "" {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, apiError{Message: "pubkey missing from context"})
+			return
 		}
 
 		if authSha256 == "" {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, apiError{Message: "blob hash missing from context"})
+			return
 		}
 
 		input := &mirrorInput{}
 		if err := ctx.ShouldBindJSON(input); err != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, apiError{Message: "invalid request body"})
+			return
 		}
 
 		blobUrl, err := url.Parse(input.Url)
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, apiError{Message: "invalid blob URL"})
+			return
 		}
 
-		blobDescriptor, err := bud04.MirrorBlob(ctx, services, cdnBaseUrl, pubkey, authSha256, *blobUrl)
+		blobDescriptor, err := bud04.MirrorBlob(ctx.Request.Context(), services, cdnBaseUrl, pubkey, authSha256, *blobUrl)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, apiError{Message: err.Error()})
+			writeBlobError(ctx, err)
 			return
 		}
 

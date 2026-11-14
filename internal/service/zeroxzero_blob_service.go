@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -17,12 +18,14 @@ import (
 )
 
 type zeroXZeroBlobService struct {
-	db         *sql.DB
-	queries    *db.Queries
-	client     *zeroxzero.Client
-	conf       config.ZeroXZeroConfig
-	cdnBaseUrl string
-	log        *zap.Logger
+	storageGovernor
+	db                       *sql.DB
+	queries                  *db.Queries
+	client                   *zeroxzero.Client
+	conf                     config.ZeroXZeroConfig
+	cdnBaseUrl               string
+	maxStoragePerPubkeyBytes atomic.Int64
+	log                      *zap.Logger
 }
 
 func NewZeroXZeroBlobService(
@@ -31,14 +34,35 @@ func NewZeroXZeroBlobService(
 	conf *config.Config,
 	log *zap.Logger,
 ) (core.BlobStorage, error) {
-	return &zeroXZeroBlobService{
+	s := &zeroXZeroBlobService{
 		db:         database,
 		queries:    queries,
 		client:     zeroxzero.New(conf.ZeroXZero.InstanceUrl),
 		conf:       conf.ZeroXZero,
 		cdnBaseUrl: conf.CdnUrl,
 		log:        log,
-	}, nil
+	}
+	s.storageGovernor.log = log
+	s.SetQuota(conf.MaxStoragePerPubkeyBytes)
+	return s, nil
+}
+
+// SetQuota changes the per-pubkey storage quota; zero disables it.
+func (s *zeroXZeroBlobService) SetQuota(bytes int64) {
+	s.maxStoragePerPubkeyBytes.Store(bytes)
+}
+
+// EnsureSpace enforces the overall cap over the blobs_0x0 table. Evicting
+// deletes from the 0x0 backend as well.
+func (s *zeroXZeroBlobService) EnsureSpace(ctx context.Context, size int64) error {
+	return s.ensureSpace(ctx, size, s.queries.GetTotalBlob0x0Bytes, s.queries.ListEviction0x0Candidates, s.evict)
+}
+
+func (s *zeroXZeroBlobService) evict(ctx context.Context, hash string) error {
+	if err := s.DeleteFromHash(ctx, hash); err != nil {
+		return err
+	}
+	return s.queries.DeleteShortLinksByHash(ctx, hash)
 }
 
 func (s *zeroXZeroBlobService) Save(
@@ -119,7 +143,21 @@ func (s *zeroXZeroBlobService) DeleteFromHash(ctx context.Context, sha256 string
 	return s.queries.DeleteBlob0x0FromHash(ctx, sha256)
 }
 
-func (s *zeroXZeroBlobService) ValidateStorageQuota(_ context.Context, _ string, _ int64) error {
+// ValidateStorageQuota applies max_storage_per_pubkey_bytes to the bytes a
+// pubkey has recorded here. Rows expire with the files, so the sum shrinks
+// as the backend forgets them.
+func (s *zeroXZeroBlobService) ValidateStorageQuota(ctx context.Context, pubkey string, newFileSize int64) error {
+	quota := s.maxStoragePerPubkeyBytes.Load()
+	if quota <= 0 {
+		return nil
+	}
+	current, err := s.queries.GetTotalStorage0x0ByPubkey(ctx, pubkey)
+	if err != nil {
+		return err
+	}
+	if current+newFileSize > quota {
+		return core.ErrStorageQuotaExceeded
+	}
 	return nil
 }
 

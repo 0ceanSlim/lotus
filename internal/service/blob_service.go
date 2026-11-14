@@ -13,6 +13,7 @@ import (
 )
 
 type blobService struct {
+	storageGovernor
 	db                       *sql.DB
 	queries                  *db.Queries
 	cdnBaseUrl               string
@@ -38,8 +39,22 @@ func NewBlobService(
 		cdnBaseUrl: cdnBaseUrl,
 		log:        log,
 	}
+	s.storageGovernor.log = log
 	s.SetQuota(maxStoragePerPubkeyBytes)
 	return s, nil
+}
+
+// EnsureSpace enforces the overall cap over the blobs table.
+func (r *blobService) EnsureSpace(ctx context.Context, size int64) error {
+	return r.ensureSpace(ctx, size, r.queries.GetTotalBlobBytes, r.queries.ListEvictionCandidates, r.evict)
+}
+
+// evict removes a blob and the short links that pointed at it.
+func (r *blobService) evict(ctx context.Context, hash string) error {
+	if err := r.queries.DeleteBlobFromHash(ctx, hash); err != nil {
+		return err
+	}
+	return r.queries.DeleteShortLinksByHash(ctx, hash)
 }
 
 func (r *blobService) Save(

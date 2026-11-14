@@ -154,6 +154,13 @@ type Config struct {
 	NostrUsersUrl            string              `yaml:"nostr_users_url" json:"nostr_users_url"`
 	MaxUploadSizeBytes       int                 `yaml:"max_upload_size_bytes" json:"max_upload_size_bytes"`
 	MaxStoragePerPubkeyBytes int64               `yaml:"max_storage_per_pubkey_bytes" json:"max_storage_per_pubkey_bytes"`
+	// MaxTotalStorageBytes caps the bytes stored on the whole server; zero
+	// means no cap. WhenFull decides what happens at the cap: "refuse" (the
+	// default) answers 507 until space frees up, "evict" deletes the blobs
+	// with the largest age × size to make room, which means no promises on
+	// how long a file stays once the server is busy.
+	MaxTotalStorageBytes int64  `yaml:"max_total_storage_bytes,omitempty" json:"max_total_storage_bytes"`
+	WhenFull             string `yaml:"when_full,omitempty" json:"when_full"`
 	AccessControlRules       []AccessControlRule `yaml:"access_control_rules" json:"access_control_rules"`
 	AllowedMimeTypes         []string            `yaml:"allowed_mime_types" json:"allowed_mime_types"`
 	ZeroXZero                ZeroXZeroConfig     `yaml:"zero_x_zero,omitempty" json:"zero_x_zero"`
@@ -178,10 +185,21 @@ func (c *Config) PublicListingEnabled() bool {
 	return c.PublicListing == nil || *c.PublicListing
 }
 
-// Retention is the human label for how long blobs live here.
+// EvictsWhenFull reports whether a full server makes room by deleting old
+// blobs rather than refusing uploads.
+func (c *Config) EvictsWhenFull() bool {
+	return c.MaxTotalStorageBytes > 0 && strings.EqualFold(c.WhenFull, "evict")
+}
+
+// Retention is the human label for how long blobs live here: "ephemeral"
+// on a 0x0 backend, "best-effort" when a full server evicts, else
+// "permanent".
 func (c *Config) Retention() string {
 	if c.ZeroXZero.Enabled {
 		return "ephemeral"
+	}
+	if c.EvictsWhenFull() {
+		return "best-effort"
 	}
 	return "permanent"
 }
@@ -221,6 +239,17 @@ func (c *Config) Validate() error {
 	if c.MaxStoragePerPubkeyBytes < 0 {
 		return errors.New("max_storage_per_pubkey_bytes cannot be negative")
 	}
+	if c.MaxTotalStorageBytes < 0 {
+		return errors.New("max_total_storage_bytes cannot be negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.WhenFull)) {
+	case "", "refuse", "evict":
+	default:
+		return errors.New("when_full must be \"refuse\" or \"evict\"")
+	}
+	if c.MaxTotalStorageBytes > 0 && c.MaxUploadSizeBytes > 0 && c.MaxTotalStorageBytes < int64(c.MaxUploadSizeBytes) {
+		return errors.New("max_total_storage_bytes must be at least max_upload_size_bytes, or the largest allowed file could never be stored")
+	}
 	for i, r := range c.AccessControlRules {
 		action := strings.ToUpper(r.Action)
 		if action != "ALLOW" && action != "DENY" {
@@ -249,6 +278,7 @@ func (c *Config) Validate() error {
 func (c *Config) Normalize() {
 	c.AdminPubkey = strings.ToLower(strings.TrimSpace(c.AdminPubkey))
 	c.Server.Cost = strings.ToLower(strings.TrimSpace(c.Server.Cost))
+	c.WhenFull = strings.ToLower(strings.TrimSpace(c.WhenFull))
 	for i := range c.AccessControlRules {
 		r := &c.AccessControlRules[i]
 		r.Action = strings.ToUpper(strings.TrimSpace(r.Action))

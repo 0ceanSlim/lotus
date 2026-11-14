@@ -33,7 +33,12 @@ type ServerView struct {
 // switches the 0x0 frontend to throwaway-key uploads; the per-network numbers
 // are shown beside the drop zone so visitors know the deal.
 type LimitsView struct {
-	MaxUploadBytes   int
+	MaxUploadBytes int
+	// MaxTotalBytes is the overall cap (0 = none); Evicts says a full server
+	// makes room by deleting old blobs, so pages can warn that nothing is
+	// promised a storage time.
+	MaxTotalBytes    int64
+	Evicts           bool
 	AnonymousUploads bool
 	UploadsPerMinute int
 	BytesPerWindow   int64

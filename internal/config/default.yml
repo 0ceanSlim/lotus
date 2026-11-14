@@ -36,6 +36,14 @@ nostr_users_url: ""
 max_upload_size_bytes: 104857600         # 100 MB per file
 max_storage_per_pubkey_bytes: 0           # 0 = unlimited
 
+# Overall cap on stored bytes; 0 = no cap. At the cap, when_full decides:
+#   refuse   new uploads get 507 Insufficient Storage until space frees up
+#   evict    the blobs with the largest age × size (age floored at an hour)
+#            are deleted to make room, so nothing is promised a storage time
+#            once the server is busy
+max_total_storage_bytes: 0
+when_full: "refuse"
+
 # Serve the unauthenticated all-blobs listing at /list-all. Off for drive
 # deployments; gallery-style frontends turn it on.
 public_listing: false

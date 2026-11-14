@@ -22,6 +22,10 @@ func (s *settingService) Reload(maxUploadSizeBytes int) {
 	s.maxUploadSizeBytes.Store(int64(maxUploadSizeBytes))
 }
 
+func (s *settingService) MaxUploadSizeBytes() int {
+	return int(s.maxUploadSizeBytes.Load())
+}
+
 func (s *settingService) ValidateFileSizeMaxBytes(ctx context.Context, sizeBytes int) error {
 	limit := s.maxUploadSizeBytes.Load()
 	if limit > 0 && int64(sizeBytes) > limit {

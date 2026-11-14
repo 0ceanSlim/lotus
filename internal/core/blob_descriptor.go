@@ -8,7 +8,19 @@ import (
 var (
 	ErrBlobNotFound         = errors.New("blob not found")
 	ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
+	// ErrServerFull means the overall storage cap is reached and nothing
+	// could (or may) be evicted to make room.
+	ErrServerFull = errors.New("server storage is full")
 )
+
+// StoragePolicy is the overall cap on stored bytes and what happens at it.
+// A zero MaxTotalBytes means no cap. With Evict, the blobs with the largest
+// age × size are deleted to make room for a new one; otherwise the upload
+// is refused.
+type StoragePolicy struct {
+	MaxTotalBytes int64
+	Evict         bool
+}
 
 type Blob struct {
 	Pubkey      string
@@ -61,4 +73,8 @@ type BlobStorage interface {
 	Meta(ctx context.Context, sha256 string) (*Blob, error)
 	DeleteFromHash(ctx context.Context, sha256 string) error
 	ValidateStorageQuota(ctx context.Context, pubkey string, newFileSize int64) error
+	// EnsureSpace makes sure size more bytes fit under the overall storage
+	// cap, evicting older blobs when the policy allows, or returns
+	// ErrServerFull.
+	EnsureSpace(ctx context.Context, size int64) error
 }

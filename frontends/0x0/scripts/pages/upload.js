@@ -160,6 +160,8 @@
       const wait = res.retryAfter ? ' try again in ' + res.retryAfter + 's.' : '';
       return 'slow down: ' + (res.reason || msg || 'rate limited') + wait;
     }
+    if (res.status === 507) return 'server is full: ' + (res.reason || msg || 'no room right now');
+    if (res.status === 413) return 'too large: ' + (res.reason || msg || 'over the size limit');
     return what + ' failed: ' + (res.reason || msg || ('HTTP ' + res.status));
   }
 

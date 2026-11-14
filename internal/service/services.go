@@ -45,6 +45,7 @@ func New(
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+	applyStoragePolicy(blobService, conf)
 
 	acrService, err := NewACRService(conf, log)
 	if err != nil {
@@ -105,8 +106,20 @@ func (s *Services) Apply(conf config.Config) error {
 	if q, ok := s.blobs.(interface{ SetQuota(int64) }); ok {
 		q.SetQuota(conf.MaxStoragePerPubkeyBytes)
 	}
+	applyStoragePolicy(s.blobs, &conf)
 	s.nostrUsers.SetURL(conf.NostrUsersUrl)
 	return nil
+}
+
+// applyStoragePolicy hands the overall cap and the behaviour at it to a
+// blob service that enforces one.
+func applyStoragePolicy(blobs core.BlobStorage, conf *config.Config) {
+	if sp, ok := blobs.(interface{ SetStoragePolicy(core.StoragePolicy) }); ok {
+		sp.SetStoragePolicy(core.StoragePolicy{
+			MaxTotalBytes: conf.MaxTotalStorageBytes,
+			Evict:         conf.EvictsWhenFull(),
+		})
+	}
 }
 
 func (s *Services) Blob() core.BlobStorage           { return s.blobs }

@@ -123,7 +123,11 @@ func SetupRoutes(
 				view.AdminProfileUrl = conf.ProfileURL(npub, conf.AdminPubkey)
 			}
 		}
-		limits := LimitsView{MaxUploadBytes: conf.MaxUploadSizeBytes}
+		limits := LimitsView{
+			MaxUploadBytes: conf.MaxUploadSizeBytes,
+			MaxTotalBytes:  conf.MaxTotalStorageBytes,
+			Evicts:         conf.EvictsWhenFull(),
+		}
 		if rl := conf.RateLimit; rl.Enabled {
 			limits.AnonymousUploads = rl.AnonymousUploads
 			limits.UploadsPerMinute = rl.UploadsPerMinutePerIP
@@ -212,7 +216,7 @@ func SetupRoutes(
 	// by minting keys; HEAD /upload reports a would-be refusal without
 	// charging anything.
 	r.HEAD("/upload", nostrAuthMiddleware("upload", log), uploadPeek(limiter, trusted), uploadRequirements(services))
-	r.PUT("/upload", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), uploadBlob(services, cdnBaseUrl))
+	r.PUT("/upload", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), uploadBlob(services, store, cdnBaseUrl))
 	r.PUT("/mirror", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), mirrorBlob(services, cdnBaseUrl))
 	r.GET("/list/:pubkey", listBlobs(services))
 	r.GET("/list-all", func(ctx *gin.Context) {
