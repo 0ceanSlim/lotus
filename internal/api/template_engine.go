@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/0ceanSlim/lotus/internal/ratelimit"
 )
 
 // ServerView is the subset of config the templates may render.
@@ -27,10 +29,23 @@ type ServerView struct {
 	AdminProfileUrl string
 }
 
+// LimitsView is what a page may say about upload limits. AnonymousUploads
+// switches the 0x0 frontend to throwaway-key uploads; the per-network numbers
+// are shown beside the drop zone so visitors know the deal.
+type LimitsView struct {
+	MaxUploadBytes   int
+	AnonymousUploads bool
+	UploadsPerMinute int
+	BytesPerWindow   int64
+	// Window is the budget window for people: "day", "12 hours".
+	Window string
+}
+
 type PageData struct {
 	Title     string
 	Theme     string
 	Server    ServerView
+	Limits    LimitsView
 	LoggedIn  bool
 	Pubkey    string
 	IsAdmin   bool
@@ -52,6 +67,17 @@ var templateFuncs = template.FuncMap{
 			return s
 		}
 		return s[:12] + "…" + s[len(s)-4:]
+	},
+	// humanBytes renders a size the way the frontends do: "50 MB".
+	"humanBytes": func(v any) string {
+		switch n := v.(type) {
+		case int:
+			return ratelimit.HumanBytes(int64(n))
+		case int64:
+			return ratelimit.HumanBytes(n)
+		default:
+			return ""
+		}
 	},
 }
 

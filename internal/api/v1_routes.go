@@ -161,6 +161,9 @@ type serverInfoResponse struct {
 	Buds             []string `json:"buds"`
 	PublicListing    bool     `json:"public_listing"`
 	Claimed          bool     `json:"claimed"`
+	// AnonymousUploads: the server's own frontend uploads with throwaway
+	// keys, and uploads are limited per network address rather than per key.
+	AnonymousUploads bool `json:"anonymous_uploads"`
 }
 
 func serverInfo(store *config.Store) gin.HandlerFunc {
@@ -191,6 +194,7 @@ func serverInfo(store *config.Store) gin.HandlerFunc {
 			Buds:             supportedBuds,
 			PublicListing:    conf.PublicListingEnabled(),
 			Claimed:          conf.Claimed(),
+			AnonymousUploads: conf.RateLimit.Enabled && conf.RateLimit.AnonymousUploads,
 		}
 		resp.ProfileUrl = conf.ProfileURL("{npub}", "{hex}")
 		if conf.AdminPubkey != "" {

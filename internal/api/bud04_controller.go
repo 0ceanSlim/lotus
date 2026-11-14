@@ -39,6 +39,9 @@ func mirrorBlob(services core.Services, cdnBaseUrl string) gin.HandlerFunc {
 			return
 		}
 
+		// The request body is a URL; the bytes that count against the upload
+		// limiter are the mirrored blob's.
+		ctx.Set(ctxUploadBytes, blobDescriptor.Size)
 		ctx.JSON(http.StatusOK, fromDomainBlobDescriptor(blobDescriptor))
 	}
 }
