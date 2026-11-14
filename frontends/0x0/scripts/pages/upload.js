@@ -9,8 +9,9 @@
 //     be deleted from any Blossom client later.
 // Neither path creates a server session. Uploads carry their own signed
 // authorization and the page keeps nothing but mill's own restore state plus
-// which method/pubkey to restore. Authorization tokens are base64url without
-// padding (BUD-11).
+// which method/pubkey to restore. Blossom authorization tokens are base64url
+// without padding (BUD-11); the short-link request to lotus's own API is a
+// NIP-98 authorization signed by the same key.
 
 (function () {
   'use strict';
@@ -33,9 +34,13 @@
   const deleteBtn = $('delete-btn');
   const copyKeyBtn = $('copy-key-btn');
   const saveKeyBtn = $('save-key-btn');
-  const account = $('account');
-  const accountNpub = $('account-npub');
-  const signinLink = $('signin-link');
+  const shortBtn = $('short-btn');
+  const shortBox = $('short-box');
+  const shortUrl = $('short-url');
+  const copyShortBtn = $('copy-short-btn');
+  const signinLinks = document.querySelectorAll('.signin-link');
+  const topAccount = $('top-account');
+  const topNpub = $('top-npub');
   const signoutLink = $('signout-link');
   const filesBox = $('my-files');
   const filesList = $('my-files-list');
@@ -96,14 +101,34 @@
     };
   }
 
-  // authHeader signs with the throwaway key when one is given, otherwise with
+  // signWith signs with the throwaway key when one is given, otherwise with
   // the signed-in mill signer.
+  function signWith(template, key) {
+    return key
+      ? window.ThrowawayKey.signEvent(template, key.privHex)
+      : signer.signEvent(template);
+  }
+
+  // authHeader is the Blossom authorization (kind 24242, base64url).
   async function authHeader(action, hash, key) {
-    const template = authTemplate(action, hash);
-    const signed = key
-      ? await window.ThrowawayKey.signEvent(template, key.privHex)
-      : await signer.signEvent(template);
+    const signed = await signWith(authTemplate(action, hash), key);
     return 'Nostr ' + b64url(JSON.stringify(signed));
+  }
+
+  // nip98Header is the authorization for lotus's own endpoints (kind 27235,
+  // standard base64: that is what internal/nip98 decodes).
+  async function nip98Header(method, url, key) {
+    const template = {
+      kind: 27235,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['u', url], ['method', method]],
+      content: '',
+    };
+    const signed = await signWith(template, key);
+    const bytes = new TextEncoder().encode(JSON.stringify(signed));
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return 'Nostr ' + btoa(bin);
   }
 
   // ── upload ───────────────────────────────────────────────────────────
@@ -206,6 +231,8 @@
   function showResult(entry) {
     current = entry;
     resultUrl.textContent = entry.url;
+    shortUrl.textContent = '';
+    shortBox.style.display = 'none';
     if (entry.key) {
       keyNsec.textContent = entry.key.nsec;
       keyBox.style.display = 'block';
@@ -247,6 +274,43 @@
     }
   }
 
+  // shortenCurrent asks the server for /s/<code> over the same key that owns
+  // the blob. It is a button rather than automatic so a mill user is not
+  // asked for a second signature on every upload.
+  async function shortenCurrent() {
+    if (!current || busy) return;
+    busy = true;
+    try {
+      setStatus('signing short link request...', 'info');
+      const url = window.location.origin + '/api/v1/short/' + current.sha256;
+      let header;
+      try {
+        header = await nip98Header('POST', url, current.key);
+      } catch (e) {
+        setStatus('signing cancelled or failed: ' + (e.message || e), 'err');
+        return;
+      }
+      let res, data = {};
+      try {
+        res = await fetch(url, { method: 'POST', headers: { Authorization: header } });
+        data = await res.json().catch(() => ({}));
+      } catch (_) {
+        setStatus('network error', 'err');
+        return;
+      }
+      if (!res.ok || !data.short_url) {
+        setStatus('short link failed: ' + (data.message || ('HTTP ' + res.status)), 'err');
+        return;
+      }
+      current.short = data.short_url;
+      shortUrl.textContent = data.short_url;
+      shortBox.style.display = 'block';
+      setStatus('done.', 'ok');
+    } finally {
+      busy = false;
+    }
+  }
+
   // saveKey hands the visitor a small text file: the clipboard is lost on
   // the next copy, and without an extension a file is the only durable place
   // for a key that is worth nothing beyond deleting this one upload.
@@ -256,6 +320,7 @@
       '0x0 one-time key',
       '',
       'file:  ' + current.url,
+      current.short ? 'short: ' + current.short : null,
       'nsec:  ' + current.key.nsec,
       'npub:  ' + current.key.npub,
       '',
@@ -263,7 +328,7 @@
       'file before it expires (sign in with it on the 0x0 page, or use any',
       'Blossom client) and is good for nothing else.',
       '',
-    ].join('\n');
+    ].filter((line) => line !== null).join('\n');
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -393,13 +458,13 @@
   function renderAccount() {
     if (signer) {
       const npub = signer.npub || (window.ThrowawayKey ? window.ThrowawayKey.npubEncode(signer.pubkey) : signer.pubkey);
-      accountNpub.textContent = shortKey(npub);
-      accountNpub.title = npub;
-      account.style.display = 'block';
-      signinLink.style.display = 'none';
+      topNpub.textContent = shortKey(npub);
+      topNpub.title = npub;
+      topAccount.style.display = '';
+      signinLinks.forEach((a) => { a.style.display = 'none'; });
     } else {
-      account.style.display = 'none';
-      signinLink.style.display = '';
+      topAccount.style.display = 'none';
+      signinLinks.forEach((a) => { a.style.display = ''; });
       filesBox.style.display = 'none';
       filesList.textContent = '';
     }
@@ -483,10 +548,12 @@
   });
 
   copyBtn.addEventListener('click', () => copyText(resultUrl.textContent, copyBtn));
+  shortBtn.addEventListener('click', shortenCurrent);
+  copyShortBtn.addEventListener('click', () => copyText(shortUrl.textContent, copyShortBtn));
   deleteBtn.addEventListener('click', deleteCurrent);
   copyKeyBtn.addEventListener('click', () => copyText(keyNsec.textContent, copyKeyBtn));
   saveKeyBtn.addEventListener('click', saveKey);
-  signinLink.addEventListener('click', openSignIn);
+  signinLinks.forEach((a) => a.addEventListener('click', openSignIn));
   signoutLink.addEventListener('click', signOut);
 
   if (!window.ThrowawayKey) {

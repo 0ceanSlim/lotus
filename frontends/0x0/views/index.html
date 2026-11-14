@@ -77,6 +77,12 @@
   }
 </style>
 
+{{if .Limits.AnonymousUploads}}
+<p id="topbar" style="font-size:12px; text-align:right; margin-bottom:0.4rem;">
+  <a href="#" class="signin-link">sign in</a>
+  <span id="top-account" style="display:none;"><span id="top-npub" style="color:#bbb;"></span> &nbsp;·&nbsp; <a href="#" id="signout-link">sign out</a></span>
+</p>
+{{end}}
 <p style="font-size:clamp(4rem,12vw,9rem); font-weight:900; line-height:1; letter-spacing:-2px;">0x0</p>
 <p style="color:#888; font-size:12px; margin-top:0.6rem;">0x0.oslim.dev &mdash; ephemeral blossom storage &mdash; files expire, links work until they don't</p>
 
@@ -84,7 +90,7 @@
 
 {{if .Limits.AnonymousUploads}}
 <p>drop a file. get a link. no account needed.</p>
-<p class="dim" style="margin-top:0.4rem;">a one-time key is made in your browser to sign the upload and forgotten unless you keep it. <a href="#" id="signin-link">sign in</a> to upload under your own nostr key instead. nothing here is permanent. that's the point.</p>
+<p class="dim" style="margin-top:0.4rem;">a one-time key is made in your browser to sign the upload and forgotten unless you keep it. <a href="#" class="signin-link">sign in</a> to upload under your own nostr key instead. nothing here is permanent. that's the point.</p>
 {{else}}
 <p>drop a file. sign once with your nostr key. get a link.</p>
 <p class="dim" style="margin-top:0.4rem;">any nostr key works. nothing here is permanent. that's the point.</p>
@@ -132,10 +138,11 @@ RETENTION CURVE  (days vs. file size)
   .btn:disabled { color: #666; border-color: #333; cursor: default; }
   .result-label { color: #888; font-size: 12px; margin-bottom: 0.4rem; }
   .small { font-size: 12px; }
+  #short-box { display: none; margin-top: 1rem; }
+  #short-url { word-break: break-all; font-size: 13px; margin-bottom: 0.6rem; }
   #key-box { display: none; margin-top: 1.2rem; border-top: 1px solid #333; padding-top: 1rem; }
   #key-nsec { word-break: break-all; font-size: 13px; color: #ddd; margin-bottom: 0.6rem; }
   #key-box p { margin-bottom: 0.8rem; color: #888; }
-  #account { display: none; }
   #my-files { display: none; }
   .file-row { font-size: 12px; margin: 0.3rem 0; word-break: break-all; }
   .file-row a { color: #ddd; }
@@ -155,7 +162,13 @@ RETENTION CURVE  (days vs. file size)
   <div class="result-label">link</div>
   <div id="result-url"></div>
   <button id="copy-btn" class="btn">copy</button>
+  <button id="short-btn" class="btn">short link</button>
   <button id="delete-btn" class="btn">delete now</button>
+  <div id="short-box">
+    <div class="result-label">short link</div>
+    <div id="short-url"></div>
+    <button id="copy-short-btn" class="btn">copy</button>
+  </div>
   <div id="key-box">
     <div class="result-label">one-time key</div>
     <div id="key-nsec"></div>
@@ -165,12 +178,9 @@ RETENTION CURVE  (days vs. file size)
   </div>
 </div>
 
-<div id="account" class="ext-notice">
-  signed in as <span id="account-npub"></span> &nbsp;·&nbsp; <a href="#" id="signout-link">sign out</a>
-  <div id="my-files">
-    <div class="result-label" style="margin-top:0.8rem;">your files</div>
-    <div id="my-files-list"></div>
-  </div>
+<div id="my-files" class="ext-notice">
+  <div class="result-label">your files</div>
+  <div id="my-files-list"></div>
 </div>
 {{else}}
 <div id="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -207,7 +217,8 @@ RETENTION CURVE  (days vs. file size)
   <a href="https://github.com/hzrd149/blossom" target="_blank">blossom protocol</a>
   <br>
   need persistent storage? &mdash;
-  <a href="https://happytavern.co/nostr-verified" target="_blank">happytavern.co</a>
+  <a href="https://blossom.oslim.dev" target="_blank">blossom.oslim.dev</a>
+  (membership at <a href="https://happytavern.oslim.dev" target="_blank">happytavern.oslim.dev</a>)
 </p>
 
 {{if .Limits.AnonymousUploads}}
