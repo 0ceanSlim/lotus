@@ -19,6 +19,7 @@ import (
 	"github.com/0ceanSlim/lotus/internal/db"
 	"github.com/0ceanSlim/lotus/internal/grainclient"
 	"github.com/0ceanSlim/lotus/internal/logging"
+	"github.com/0ceanSlim/lotus/internal/ratelimit"
 	"github.com/0ceanSlim/lotus/internal/service"
 )
 
@@ -62,8 +63,30 @@ func main() {
 	queries := db.New(database)
 
 	services := service.New(ctx, database, queries, &conf, logger)
-	store.SetApplyHook(services.Apply)
+
+	// Per-network upload limiter. Its secret lives only in this process, so a
+	// restart forgets every address it ever saw.
+	limiter, err := ratelimit.New(ratelimit.FromConfig(conf.RateLimit))
+	if err != nil {
+		logger.Fatal("upload rate limiter: " + err.Error())
+	}
+	store.SetApplyHook(func(next config.Config) error {
+		if err := services.Apply(next); err != nil {
+			return err
+		}
+		return limiter.Reload(ratelimit.FromConfig(next.RateLimit))
+	})
 	services.Start(ctx)
+
+	if rl := conf.RateLimit; rl.Enabled {
+		logger.Info("upload rate limiter enabled; client addresses are kept out of this log",
+			zap.Int("uploads_per_minute_per_ip", rl.UploadsPerMinutePerIP),
+			zap.Int64("bytes_per_window_per_ip", rl.BytesPerWindowPerIP),
+			zap.String("window", rl.WindowDuration().String()),
+			zap.Int("max_concurrent_per_ip", rl.MaxConcurrentPerIP),
+			zap.Bool("anonymous_uploads", rl.AnonymousUploads),
+			zap.Bool("exempt_trusted_pubkeys", rl.ExemptTrustedPubkeys))
+	}
 
 	if conf.ZeroXZero.Enabled {
 		go runExpiryCleanup(ctx, queries, logger)
@@ -97,7 +120,7 @@ func main() {
 		logger.Warn("this server has no operator yet: open /setup in a browser to claim it")
 	}
 
-	router := api.SetupRoutes(services, queries, store, services.NostrUsers().GetCachedKeys, logger, webFS)
+	router := api.SetupRoutes(services, queries, store, limiter, services.NostrUsers().GetCachedKeys, logger, webFS)
 	logger.Info("listening", zap.String("addr", conf.ApiAddr), zap.String("cdn_url", conf.CdnUrl))
 	if err := router.Run(conf.ApiAddr); err != nil {
 		logger.Fatal(err.Error())

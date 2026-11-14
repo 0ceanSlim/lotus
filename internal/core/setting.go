@@ -16,4 +16,6 @@ type Setting struct {
 
 type SettingService interface {
 	ValidateFileSizeMaxBytes(ctx context.Context, sizeBytes int) error
+	// MaxUploadSizeBytes is the per-file limit, zero when there is none.
+	MaxUploadSizeBytes() int
 }

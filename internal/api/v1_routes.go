@@ -17,6 +17,7 @@ import (
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
 	"github.com/0ceanSlim/lotus/internal/nip98"
+	"github.com/0ceanSlim/lotus/internal/ratelimit"
 )
 
 // maxLoginBody caps the login request body we buffer for the NIP-98 payload
@@ -30,7 +31,7 @@ var supportedBuds = []string{"BUD-01", "BUD-02", "BUD-04", "BUD-06", "BUD-08"}
 // media servers, keys, publish), lotus's drive endpoints and the admin API
 // under /api/v1. The legacy /api/auth and /api/user surface stays untouched
 // for frontends that depend on it.
-func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries, store *config.Store, members func() []string, log *zap.Logger) {
+func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries, store *config.Store, members func() []string, limiter *ratelimit.Limiter, trusted trustedPubkeyFunc, log *zap.Logger) {
 	v1 := r.Group("/api/v1")
 
 	// Session and sign-in, backed by grain's session manager.
@@ -63,6 +64,10 @@ func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries
 	v1.GET("/drive/files", driveFiles(services, store, log))
 	v1.POST("/drive/files/:hash/short", driveCreateShortLink(services, store, log))
 	v1.DELETE("/drive/short/:code", driveRevokeShortLink(services, log))
+	// Short link for a blob on the strength of a NIP-98 authorization alone,
+	// for frontends without a server session (the 0x0 page, throwaway keys
+	// included). Same ownership rule as the drive's endpoint.
+	v1.POST("/short/:hash", signedShortLink(services, store, limiter, trusted, log))
 
 	// Admin: reads need the operator's session, writes a NIP-98 signature too.
 	v1.GET("/admin/config", adminGetConfig(store))
@@ -125,6 +130,14 @@ func v1Login(store *config.Store, log *zap.Logger) gin.HandlerFunc {
 	}
 }
 
+// whenFullLabel is "evict" or "refuse", the latter also when there is no cap.
+func whenFullLabel(conf config.Config) string {
+	if conf.EvictsWhenFull() {
+		return "evict"
+	}
+	return "refuse"
+}
+
 // grainSession returns the grain session for the request, if any.
 func grainSession(r *http.Request) *session.UserSession {
 	if session.SessionMgr == nil {
@@ -161,6 +174,13 @@ type serverInfoResponse struct {
 	Buds             []string `json:"buds"`
 	PublicListing    bool     `json:"public_listing"`
 	Claimed          bool     `json:"claimed"`
+	// AnonymousUploads: the server's own frontend uploads with throwaway
+	// keys, and uploads are limited per network address rather than per key.
+	AnonymousUploads bool `json:"anonymous_uploads"`
+	// MaxTotalStorageBytes is the overall cap (0 = none) and WhenFull what
+	// happens at it: "refuse" or "evict".
+	MaxTotalStorageBytes int64  `json:"max_total_storage_bytes"`
+	WhenFull             string `json:"when_full"`
 }
 
 func serverInfo(store *config.Store) gin.HandlerFunc {
@@ -191,6 +211,9 @@ func serverInfo(store *config.Store) gin.HandlerFunc {
 			Buds:             supportedBuds,
 			PublicListing:    conf.PublicListingEnabled(),
 			Claimed:          conf.Claimed(),
+			AnonymousUploads: conf.RateLimit.Enabled && conf.RateLimit.AnonymousUploads,
+			MaxTotalStorageBytes: conf.MaxTotalStorageBytes,
+			WhenFull:             whenFullLabel(conf),
 		}
 		resp.ProfileUrl = conf.ProfileURL("{npub}", "{hex}")
 		if conf.AdminPubkey != "" {
@@ -309,33 +332,70 @@ func driveCreateShortLink(services core.Services, store *config.Store, log *zap.
 		if sess == nil {
 			return
 		}
-		hash := strings.ToLower(strings.SplitN(c.Param("hash"), ".", 2)[0])
-		if !isHexHash(hash) {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid blob hash"})
-			return
-		}
-		meta, err := services.Blob().Meta(c.Request.Context(), hash)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "no such blob on this server"})
-			return
-		}
-		if !strings.EqualFold(meta.Pubkey, sess.PublicKey) {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "that blob belongs to a different pubkey"})
-			return
-		}
-		link, err := services.ShortLinks().GetOrCreate(c.Request.Context(), sess.PublicKey, hash)
-		if err != nil {
-			log.Error("short link create failed", zap.String("hash", hash), zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "could not create a short link"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"success":   true,
-			"code":      link.Code,
-			"short_url": shortLinkURL(store.Get().CdnUrl, link.Code),
-			"url":       meta.Url,
-		})
+		mintShortLink(c, services, store, log, sess.PublicKey, c.Param("hash"))
 	}
+}
+
+// signedShortLink is driveCreateShortLink for a caller with no session: the
+// request carries a NIP-98 authorization (kind 27235 for POST and this URL).
+// The 0x0 page uses it for both throwaway keys and mill signers, so a short
+// link needs no account there either. Each request is charged to the
+// network like an upload, so a key cannot fill the table.
+func signedShortLink(services core.Services, store *config.Store, limiter *ratelimit.Limiter, trusted trustedPubkeyFunc, log *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxLoginBody))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "could not read request body"})
+			return
+		}
+		pubkey, err := nip98.Verify(c.Request, body, store.Get().CdnUrl)
+		if err != nil {
+			c.Header("WWW-Authenticate", "Nostr")
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "a short link needs a signed NIP-98 authorization: " + err.Error()})
+			return
+		}
+		if !chargeOnce(c, limiter, trusted, pubkey) {
+			return
+		}
+		mintShortLink(c, services, store, log, pubkey, c.Param("hash"))
+	}
+}
+
+// mintShortLink answers a short-link request for pubkey, already
+// authenticated by the caller, over the blob named by rawHash. Links are per
+// pubkey and per blob. On a server whose blobs are publicly listed, any key
+// may shorten any blob (a short link is a bookmark to something already
+// public, and the first uploader of identical bytes owns the row, so the
+// person who just dropped the file often is not the owner); where blobs are
+// private to their uploader, only the owner may.
+func mintShortLink(c *gin.Context, services core.Services, store *config.Store, log *zap.Logger, pubkey, rawHash string) {
+	hash := strings.ToLower(strings.SplitN(rawHash, ".", 2)[0])
+	if !isHexHash(hash) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid blob hash"})
+		return
+	}
+	meta, err := services.Blob().Meta(c.Request.Context(), hash)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "no such blob on this server"})
+		return
+	}
+	conf := store.Get()
+	if !strings.EqualFold(meta.Pubkey, pubkey) && !conf.PublicListingEnabled() {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "that blob belongs to a different pubkey"})
+		return
+	}
+	link, err := services.ShortLinks().GetOrCreate(c.Request.Context(), pubkey, hash)
+	if err != nil {
+		log.Error("short link create failed", zap.String("hash", hash), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "could not create a short link"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"code":      link.Code,
+		"short_url": shortLinkURL(store.Get().CdnUrl, link.Code),
+		"url":       meta.Url,
+	})
 }
 
 func driveRevokeShortLink(services core.Services, log *zap.Logger) gin.HandlerFunc {

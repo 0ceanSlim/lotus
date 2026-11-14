@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/0ceanSlim/lotus/internal/bloburl"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/hashing"
+	"github.com/gabriel-vasile/mimetype"
 )
 
 func UploadBlob(
@@ -54,6 +54,11 @@ func UploadBlob(
 
 	if blob, err := blobs.GetFromHash(ctx, hash); err == nil {
 		return blob, nil
+	}
+
+	// Only a blob that is actually new needs room under the overall cap.
+	if err := blobs.EnsureSpace(ctx, int64(len(blobBytes))); err != nil {
+		return nil, err
 	}
 
 	url := bloburl.Build(cdnBaseUrl, hash, mimeType.String())

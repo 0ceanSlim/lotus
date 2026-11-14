@@ -7,4 +7,6 @@ const (
 	HeaderXContentType   = "X-Content-Type"
 	HeaderXContentLength = "X-Content-Length"
 	HeaderXUploadMessage = "X-Upload-Message"
+	// HeaderXReason is the BUD-style human-readable reason on a refusal.
+	HeaderXReason = "X-Reason"
 )

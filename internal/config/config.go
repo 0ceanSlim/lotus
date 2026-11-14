@@ -10,10 +10,12 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,6 +35,85 @@ type ZeroXZeroConfig struct {
 	MaxFileSizeBytes int64   `yaml:"max_file_size_bytes" json:"max_file_size_bytes"`
 	MinRetentionDays float64 `yaml:"min_retention_days" json:"min_retention_days"`
 	MaxRetentionDays float64 `yaml:"max_retention_days" json:"max_retention_days"`
+}
+
+// RateLimitConfig attaches upload limits to the client's network address, so
+// that a server accepting uploads from throwaway keys cannot be drained by
+// minting keys. Everything is off by default; a drive deployment never sees
+// it. The limiter's design and privacy guarantees are in HANDOFF.md.
+type RateLimitConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// AnonymousUploads makes the bundled 0x0 frontend upload with a
+	// browser-generated throwaway key instead of asking for a sign-in. It
+	// requires Enabled: a throwaway key has no quota of its own.
+	AnonymousUploads bool `yaml:"anonymous_uploads" json:"anonymous_uploads"`
+	// UploadsPerMinutePerIP is the per-address upload rate and burst size.
+	// Zero means no limit on this dimension.
+	UploadsPerMinutePerIP int `yaml:"uploads_per_minute_per_ip" json:"uploads_per_minute_per_ip"`
+	// BytesPerWindowPerIP is the per-address byte budget: a burst of this
+	// many bytes, refilled evenly over Window. Zero means no limit.
+	BytesPerWindowPerIP int64 `yaml:"bytes_per_window_per_ip" json:"bytes_per_window_per_ip"`
+	// Window is a Go duration such as "24h". It is also how long a pubkey
+	// stays tied to the address it was first seen from. Empty means 24h.
+	Window string `yaml:"window" json:"window"`
+	// MaxConcurrentPerIP caps uploads in flight per address. Zero means no
+	// limit.
+	MaxConcurrentPerIP int `yaml:"max_concurrent_per_ip" json:"max_concurrent_per_ip"`
+	// ExemptTrustedPubkeys skips the limits for pubkeys the operator vouches
+	// for: one named in an ALLOW UPLOAD rule or listed in a nostr.json. The
+	// ALL rule does not count, since anyone can mint a key it covers.
+	ExemptTrustedPubkeys bool `yaml:"exempt_trusted_pubkeys" json:"exempt_trusted_pubkeys"`
+	// TrustedProxies are addresses or CIDRs, besides loopback, whose
+	// CF-Connecting-IP or X-Real-IP header names the real client.
+	TrustedProxies []string `yaml:"trusted_proxies,omitempty" json:"trusted_proxies"`
+}
+
+// DefaultRateLimitWindow applies when rate_limit.window is empty.
+const DefaultRateLimitWindow = 24 * time.Hour
+
+// WindowDuration is the parsed window, or the default.
+func (r RateLimitConfig) WindowDuration() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(r.Window)); err == nil && d > 0 {
+		return d
+	}
+	return DefaultRateLimitWindow
+}
+
+// Validate checks the block on its own and against the per-file size limit.
+func (r RateLimitConfig) Validate(maxUploadSizeBytes int) error {
+	if w := strings.TrimSpace(r.Window); w != "" {
+		if d, err := time.ParseDuration(w); err != nil || d <= 0 {
+			return fmt.Errorf("rate_limit.window must be a positive duration such as \"24h\", got %q", r.Window)
+		}
+	}
+	if r.UploadsPerMinutePerIP < 0 || r.BytesPerWindowPerIP < 0 || r.MaxConcurrentPerIP < 0 {
+		return errors.New("rate_limit limits cannot be negative")
+	}
+	for _, p := range r.TrustedProxies {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if strings.Contains(p, "/") {
+			if _, _, err := net.ParseCIDR(p); err != nil {
+				return fmt.Errorf("rate_limit.trusted_proxies: %q is not a CIDR", p)
+			}
+		} else if net.ParseIP(p) == nil {
+			return fmt.Errorf("rate_limit.trusted_proxies: %q is not an IP address", p)
+		}
+	}
+	if r.AnonymousUploads && !r.Enabled {
+		return errors.New("rate_limit.anonymous_uploads requires rate_limit.enabled: a throwaway key has no quota of its own, so limits must attach to the network")
+	}
+	if r.Enabled {
+		if r.UploadsPerMinutePerIP == 0 && r.BytesPerWindowPerIP == 0 && r.MaxConcurrentPerIP == 0 {
+			return errors.New("rate_limit.enabled needs at least one of uploads_per_minute_per_ip, bytes_per_window_per_ip or max_concurrent_per_ip")
+		}
+		if r.BytesPerWindowPerIP > 0 && maxUploadSizeBytes > 0 && r.BytesPerWindowPerIP < int64(maxUploadSizeBytes) {
+			return errors.New("rate_limit.bytes_per_window_per_ip must be at least max_upload_size_bytes, or the largest allowed file could never be uploaded")
+		}
+	}
+	return nil
 }
 
 // ServerInfo is the operator-facing identity of this deployment. Everything is
@@ -73,6 +154,13 @@ type Config struct {
 	NostrUsersUrl            string              `yaml:"nostr_users_url" json:"nostr_users_url"`
 	MaxUploadSizeBytes       int                 `yaml:"max_upload_size_bytes" json:"max_upload_size_bytes"`
 	MaxStoragePerPubkeyBytes int64               `yaml:"max_storage_per_pubkey_bytes" json:"max_storage_per_pubkey_bytes"`
+	// MaxTotalStorageBytes caps the bytes stored on the whole server; zero
+	// means no cap. WhenFull decides what happens at the cap: "refuse" (the
+	// default) answers 507 until space frees up, "evict" deletes the blobs
+	// with the largest age × size to make room, which means no promises on
+	// how long a file stays once the server is busy.
+	MaxTotalStorageBytes int64  `yaml:"max_total_storage_bytes,omitempty" json:"max_total_storage_bytes"`
+	WhenFull             string `yaml:"when_full,omitempty" json:"when_full"`
 	AccessControlRules       []AccessControlRule `yaml:"access_control_rules" json:"access_control_rules"`
 	AllowedMimeTypes         []string            `yaml:"allowed_mime_types" json:"allowed_mime_types"`
 	ZeroXZero                ZeroXZeroConfig     `yaml:"zero_x_zero,omitempty" json:"zero_x_zero"`
@@ -86,6 +174,10 @@ type Config struct {
 	// gallery-style frontends. Nil means enabled, so existing deployments
 	// keep working; drive deployments set it to false.
 	PublicListing *bool `yaml:"public_listing" json:"public_listing"`
+	// RateLimit is the per-network upload limiter behind anonymous uploads.
+	// Omitted from the file while every field is zero, so a deployment that
+	// never turns it on never sees the block.
+	RateLimit RateLimitConfig `yaml:"rate_limit,omitempty" json:"rate_limit"`
 }
 
 // PublicListingEnabled reports whether /list-all is served.
@@ -93,10 +185,21 @@ func (c *Config) PublicListingEnabled() bool {
 	return c.PublicListing == nil || *c.PublicListing
 }
 
-// Retention is the human label for how long blobs live here.
+// EvictsWhenFull reports whether a full server makes room by deleting old
+// blobs rather than refusing uploads.
+func (c *Config) EvictsWhenFull() bool {
+	return c.MaxTotalStorageBytes > 0 && strings.EqualFold(c.WhenFull, "evict")
+}
+
+// Retention is the human label for how long blobs live here: "ephemeral"
+// on a 0x0 backend, "best-effort" when a full server evicts, else
+// "permanent".
 func (c *Config) Retention() string {
 	if c.ZeroXZero.Enabled {
 		return "ephemeral"
+	}
+	if c.EvictsWhenFull() {
+		return "best-effort"
 	}
 	return "permanent"
 }
@@ -136,6 +239,17 @@ func (c *Config) Validate() error {
 	if c.MaxStoragePerPubkeyBytes < 0 {
 		return errors.New("max_storage_per_pubkey_bytes cannot be negative")
 	}
+	if c.MaxTotalStorageBytes < 0 {
+		return errors.New("max_total_storage_bytes cannot be negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.WhenFull)) {
+	case "", "refuse", "evict":
+	default:
+		return errors.New("when_full must be \"refuse\" or \"evict\"")
+	}
+	if c.MaxTotalStorageBytes > 0 && c.MaxUploadSizeBytes > 0 && c.MaxTotalStorageBytes < int64(c.MaxUploadSizeBytes) {
+		return errors.New("max_total_storage_bytes must be at least max_upload_size_bytes, or the largest allowed file could never be stored")
+	}
 	for i, r := range c.AccessControlRules {
 		action := strings.ToUpper(r.Action)
 		if action != "ALLOW" && action != "DENY" {
@@ -153,6 +267,9 @@ func (c *Config) Validate() error {
 	if len(c.AllowedMimeTypes) == 0 {
 		return errors.New("allowed_mime_types needs at least one entry (\"*\" for any)")
 	}
+	if err := c.RateLimit.Validate(c.MaxUploadSizeBytes); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,6 +278,7 @@ func (c *Config) Validate() error {
 func (c *Config) Normalize() {
 	c.AdminPubkey = strings.ToLower(strings.TrimSpace(c.AdminPubkey))
 	c.Server.Cost = strings.ToLower(strings.TrimSpace(c.Server.Cost))
+	c.WhenFull = strings.ToLower(strings.TrimSpace(c.WhenFull))
 	for i := range c.AccessControlRules {
 		r := &c.AccessControlRules[i]
 		r.Action = strings.ToUpper(strings.TrimSpace(r.Action))
@@ -265,6 +383,7 @@ func (s *Store) Update(mutate func(*Config) error) error {
 	next.AccessControlRules = append([]AccessControlRule(nil), s.cfg.AccessControlRules...)
 	next.AllowedMimeTypes = append([]string(nil), s.cfg.AllowedMimeTypes...)
 	next.IndexRelays = append([]string(nil), s.cfg.IndexRelays...)
+	next.RateLimit.TrustedProxies = append([]string(nil), s.cfg.RateLimit.TrustedProxies...)
 	if s.cfg.PublicListing != nil {
 		v := *s.cfg.PublicListing
 		next.PublicListing = &v

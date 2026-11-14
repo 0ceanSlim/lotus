@@ -4,26 +4,28 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/0ceanslim/grain/client/core/tools"
 	"github.com/gin-contrib/cors"
-	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"github.com/0ceanSlim/lotus/internal/config"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
+	"github.com/0ceanSlim/lotus/internal/ratelimit"
 )
 
 // SetupRoutes builds the router. webFS is the frontend: the data directory's
 // web/ folder when present, otherwise the embedded drive frontend. members
 // returns the pubkeys currently granted upload access by the nostr.json.
+// limiter is the per-network upload limiter; it is always mounted and is a
+// no-op while rate_limit.enabled is off, so turning it on needs no restart.
 func SetupRoutes(
 	services core.Services,
 	queries *db.Queries,
 	store *config.Store,
+	limiter *ratelimit.Limiter,
 	members func() []string,
 	log *zap.Logger,
 	webFS fs.FS,
@@ -32,8 +34,13 @@ func SetupRoutes(
 	cdnBaseUrl := store.Get().CdnUrl
 	r := gin.New()
 
-	r.Use(ginzap.Ginzap(log, time.RFC3339, true))
-	r.Use(ginzap.RecoveryWithZap(log, true))
+	// Access and panic logging. While the upload limiter is on, client
+	// addresses are kept out of both (the deployment that needs the limiter
+	// runs at TRACE); otherwise ginzap's standard lines are emitted exactly as
+	// before. The choice is per request because the flag is hot.
+	private := func() bool { return limiter != nil && limiter.Enabled() }
+	r.Use(accessLog(log, private))
+	r.Use(recovery(log, private))
 
 	r.Use(cors.New(cors.Config{
 		AllowAllOrigins: true,
@@ -79,8 +86,12 @@ func SetupRoutes(
 		userGroup.GET("/media", getUserMedia(queries, cdnBaseUrl, log))
 	}
 
+	// trusted reports pubkeys the operator vouches for, for the limiter's
+	// optional exemption.
+	trusted := trustedPubkeys(services)
+
 	// grain-backed API, the drive endpoints and the admin API.
-	registerV1Routes(r, services, queries, store, members, log)
+	registerV1Routes(r, services, queries, store, members, limiter, trusted, log)
 
 	// Page rendering. Everything the templates show about the server comes
 	// from the live config, so admin edits appear on the next request. The
@@ -112,7 +123,18 @@ func SetupRoutes(
 				view.AdminProfileUrl = conf.ProfileURL(npub, conf.AdminPubkey)
 			}
 		}
-		data := PageData{Title: title, Theme: "dark", Server: view, Unclaimed: !conf.Claimed()}
+		limits := LimitsView{
+			MaxUploadBytes: conf.MaxUploadSizeBytes,
+			MaxTotalBytes:  conf.MaxTotalStorageBytes,
+			Evicts:         conf.EvictsWhenFull(),
+		}
+		if rl := conf.RateLimit; rl.Enabled {
+			limits.AnonymousUploads = rl.AnonymousUploads
+			limits.UploadsPerMinute = rl.UploadsPerMinutePerIP
+			limits.BytesPerWindow = rl.BytesPerWindowPerIP
+			limits.Window = ratelimit.HumanDuration(rl.WindowDuration())
+		}
+		data := PageData{Title: title, Theme: "dark", Server: view, Limits: limits, Unclaimed: !conf.Claimed()}
 		if sess := grainSession(ctx.Request); sess != nil {
 			data.LoggedIn = true
 			data.Pubkey = sess.PublicKey
@@ -189,10 +211,13 @@ func SetupRoutes(
 	staticDir(r, webFS, "/scripts", "scripts")
 	staticDir(r, webFS, "/res", "res")
 
-	// Blossom protocol.
-	r.HEAD("/upload", nostrAuthMiddleware("upload", log), uploadRequirements(services))
-	r.PUT("/upload", nostrAuthMiddleware("upload", log), uploadBlob(services, cdnBaseUrl))
-	r.PUT("/mirror", nostrAuthMiddleware("upload", log), mirrorBlob(services, cdnBaseUrl))
+	// Blossom protocol. Every way of putting bytes on the server passes the
+	// per-network limiter after the signature check, so it cannot be dodged
+	// by minting keys; HEAD /upload reports a would-be refusal without
+	// charging anything.
+	r.HEAD("/upload", nostrAuthMiddleware("upload", log), uploadPeek(limiter, trusted), uploadRequirements(services))
+	r.PUT("/upload", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), uploadBlob(services, store, cdnBaseUrl))
+	r.PUT("/mirror", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), mirrorBlob(services, cdnBaseUrl))
 	r.GET("/list/:pubkey", listBlobs(services))
 	r.GET("/list-all", func(ctx *gin.Context) {
 		conf := store.Get()

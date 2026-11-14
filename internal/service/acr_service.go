@@ -63,6 +63,26 @@ func (r *ACRService) UpdateNostrUsers(pubkeys []string) {
 	r.log.Info("updated nostr users", zap.Int("count", len(pubkeys)))
 }
 
+// IsTrusted reports whether the operator vouches for pubkey: it is named in
+// an ALLOW UPLOAD rule or listed in a nostr.json. The ALL rule does not
+// count, since anyone can mint a key it covers. The upload rate limiter uses
+// this for its optional exemption.
+func (r *ACRService) IsTrusted(pubkey string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	pubkey = strings.ToLower(pubkey)
+	if r.nostrUserPubkeys[pubkey] {
+		return true
+	}
+	for _, rule := range r.rules[string(core.ResourceUpload)] {
+		if rule.Action == core.ACRActionAllow && strings.EqualFold(rule.Pubkey, pubkey) {
+			return true
+		}
+	}
+	return false
+}
+
 // Validate decides whether pubkey may perform resource. A resource with no
 // rules at all is denied: a fresh server accepts no uploads until the
 // operator claims it or configures access.

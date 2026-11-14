@@ -36,6 +36,14 @@ nostr_users_url: ""
 max_upload_size_bytes: 104857600         # 100 MB per file
 max_storage_per_pubkey_bytes: 0           # 0 = unlimited
 
+# Overall cap on stored bytes; 0 = no cap. At the cap, when_full decides:
+#   refuse   new uploads get 507 Insufficient Storage until space frees up
+#   evict    the blobs with the largest age × size (age floored at an hour)
+#            are deleted to make room, so nothing is promised a storage time
+#            once the server is busy
+max_total_storage_bytes: 0
+when_full: "refuse"
+
 # Serve the unauthenticated all-blobs listing at /list-all. Off for drive
 # deployments; gallery-style frontends turn it on.
 public_listing: false
@@ -68,3 +76,38 @@ access_control_rules:
 # Accepted MIME types, or a single "*" for any.
 allowed_mime_types:
   - "*"
+
+# ── Anonymous uploads and per-network limits ────────────────────────────
+#
+# Off by default. Turn this on for a public, free-for-all server such as the
+# ephemeral 0x0 deployment. Because anyone can mint a key, these limits attach
+# to the client's network address instead of the pubkey, and they apply to
+# every upload whether it was signed by a throwaway key or a real one.
+# Addresses are only ever held in memory as keyed hashes that a restart
+# forgets; nothing about them is written to the database, the log or disk.
+# While enabled, the access log also drops the client address. See HANDOFF.md.
+rate_limit:
+  enabled: false
+  # The bundled 0x0 frontend uploads with a throwaway key generated in the
+  # browser instead of asking for a sign-in. Needs enabled: true.
+  anonymous_uploads: false
+  # Uploads per minute per address; also the burst. 0 = no limit.
+  uploads_per_minute_per_ip: 10
+  # Bytes per address per window, refilled evenly over the window: a burst of
+  # this much, then this much again per window. Must be at least
+  # max_upload_size_bytes. 0 = no limit.
+  bytes_per_window_per_ip: 524288000    # 500 MB
+  # Budget window as a Go duration; also how long a pubkey stays tied to the
+  # address it was first seen from.
+  window: "24h"
+  # Uploads in flight per address. 0 = no limit.
+  max_concurrent_per_ip: 3
+  # Skip the limits for pubkeys you vouch for: one named in an ALLOW UPLOAD
+  # rule or listed in your nostr.json. Off means the same rules for everyone;
+  # turn it on if members behind shared addresses (CGNAT, Tor, a campus) get
+  # throttled by strangers on the same address.
+  exempt_trusted_pubkeys: false
+  # Addresses or CIDRs, besides loopback, whose CF-Connecting-IP or X-Real-IP
+  # header names the real client. A Cloudflare tunnel or nginx on this machine
+  # needs nothing here.
+  # trusted_proxies: ["10.0.0.0/8"]

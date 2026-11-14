@@ -27,7 +27,7 @@ The drive frontend is compiled into the binary and served by default. A `web/` f
 | Frontend | Path | Description |
 |----------|------|-------------|
 | `drive` | `frontends/drive/` | The main frontend. Server page for visitors, a personal drive for signed-in users. Built on grain's `/api/v1` session API and mill. Actively developed. |
-| `0x0` | `frontends/0x0/` | Frontend for ephemeral deployments backed by a self-hosted 0x0 instance, with a public gallery. Uses the legacy `/api/auth` session API, which the server keeps serving unchanged. |
+| `0x0` | `frontends/0x0/` | Frontend for ephemeral deployments backed by a self-hosted 0x0 instance, with a public gallery. Uses the legacy `/api/auth` session API, which the server keeps serving unchanged. With `rate_limit.anonymous_uploads` on, the drop zone needs no sign-in: a throwaway key made in the browser signs the upload and its nsec is shown once for a later delete, with optional sign-in through mill (extension, bunker, Amber, pomegranate, pasted key). |
 
 To run a frontend from disk instead of the embedded one, copy it into your data directory:
 
@@ -193,8 +193,17 @@ The drive frontend talks to `/api/v1/`, which is grain's client API mounted on l
 | `GET /api/v1/server/info` | This deployment's identity, limits and capabilities. The leading fields use grain's media-server info shape. |
 | `GET /api/v1/drive/files` | The session user's blobs, newest first, with storage totals and any short links. |
 | `POST /api/v1/drive/files/<sha256>/short`, `DELETE /api/v1/drive/short/<code>` | Create or revoke a short link for a blob you own. `GET /s/<code>` redirects to the blob. |
+| `POST /api/v1/short/<sha256>` | Create a short link with a NIP-98 authorization instead of a session; what the 0x0 page uses, throwaway keys included. Owner-only unless `public_listing` is on, where any key may bookmark any blob; counted against the per-network upload limit. |
 
 The legacy `/api/auth/*`, `/api/user/*`, `/api/profile` and `/list-all` endpoints used by the 0x0 frontend are unchanged.
+
+### Per-network upload limits
+
+For a public, free-for-all server (anyone can mint a Nostr key, so a per-pubkey quota means nothing) the `rate_limit` block attaches limits to the client's network address instead: uploads per minute, a byte budget per window, and uploads in flight, applied to every `PUT /upload` and `PUT /mirror` after the signature check. A pubkey stays tied to the address it was first seen from for one window, so switching addresses with the same key charges both. Refused requests get `429` with `Retry-After` and `X-Reason`; `HEAD /upload` reports a would-be refusal without charging.
+
+Addresses are held only in memory, as keyed hashes under a secret the process draws at startup, and nothing about them is written to the database, the log or disk; while the limiter is on, the access log drops the client address too. Behind a Cloudflare tunnel or nginx on the same machine the real client comes from `CF-Connecting-IP` / `X-Real-IP`, which are believed only from loopback and `trusted_proxies`. The block is off by default; `internal/config/default.yml` documents every key and `HANDOFF.md` the design and the decisions behind the defaults.
+
+Storage is bounded per file (`max_upload_size_bytes`, enforced before the body is buffered), per pubkey (`max_storage_per_pubkey_bytes`) and, with `max_total_storage_bytes`, for the server as a whole; `when_full: evict` lets a full server make room by deleting the blobs with the largest age × size. `PUT /mirror` runs the same access rule, size limit and quota as an upload and only fetches from public addresses.
 
 ## Local development
 
@@ -214,14 +223,17 @@ go run ./cmd/lotus --data-dir .dev-data
 | `cdn_url` | Base URL used to construct blob URLs in responses |
 | `admin_pubkey` | Hex pubkey of the operator. Empty means unclaimed; the first sign-in at `/setup` fills it. |
 | `nostr_users_url` | URL of a `.well-known/nostr.json` to auto-fetch allowed uploaders, or several separated by commas (union; refreshed every 5 min, retried every 15s until each source has loaded once; a failing source keeps its last list) |
-| `max_upload_size_bytes` | Per-upload size limit |
-| `max_storage_per_pubkey_bytes` | Total storage quota per pubkey (`0` = unlimited) |
+| `max_upload_size_bytes` | Per-upload size limit; the request body is cut off there and a declared size over it gets 413 |
+| `max_storage_per_pubkey_bytes` | Total storage quota per pubkey (`0` = unlimited), on both backends |
+| `max_total_storage_bytes` | Cap on bytes stored by the whole server (`0` = no cap) |
+| `when_full` | At the cap: `refuse` (507 until space frees up) or `evict` (delete blobs ranked by age × size to make room; nothing is promised a storage time then) |
 | `access_control_rules` | List of ALLOW/DENY rules by pubkey and resource |
 | `allowed_mime_types` | List of accepted MIME types (`*` = any) |
 | `zero_x_zero` | 0x0.st backend config block (see above) |
 | `public_listing` | Serve the unauthenticated all-blobs listing at `/list-all` (default `true`; drive deployments set `false`) |
 | `server` | Identity shown on the server page and in the sign-in modal: `name`, `description`, `icon`, `contact`, `cost`, `membership_url`, `terms_url`, `privacy_url`, and `profile_url`, the template every pubkey links through with `{npub}` or `{hex}` replaced (default njump; point it at your own client, e.g. `https://wheat.oslim.dev/p/{npub}`) |
 | `index_relays` | Relays grain uses to resolve profiles and relay lists (defaults to grain's built-in seed list) |
+| `rate_limit` | Per-network upload limits and anonymous uploads (off by default): `enabled`, `anonymous_uploads`, `uploads_per_minute_per_ip`, `bytes_per_window_per_ip`, `window`, `max_concurrent_per_ip`, `exempt_trusted_pubkeys`, `trusted_proxies` (see above) |
 
 ## Roadmap
 
