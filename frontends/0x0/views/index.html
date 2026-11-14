@@ -82,8 +82,13 @@
 
 <div class="line"></div>
 
+{{if .Limits.AnonymousUploads}}
+<p>drop a file. get a link. no account needed.</p>
+<p class="dim" style="margin-top:0.4rem;">a one-time key is made in your browser to sign the upload and forgotten unless you keep it. <a href="#" id="signin-link">sign in</a> to upload under your own nostr key instead. nothing here is permanent. that's the point.</p>
+{{else}}
 <p>drop a file. sign once with your nostr key. get a link.</p>
 <p class="dim" style="margin-top:0.4rem;">any nostr key works. nothing here is permanent. that's the point.</p>
+{{end}}
 
 <div class="line"></div>
 
@@ -110,6 +115,64 @@ RETENTION CURVE  (days vs. file size)
 
 <div class="line"></div>
 
+{{if .Limits.AnonymousUploads}}
+<style>
+  .btn {
+    background: none;
+    border: 1px solid #555;
+    color: #fff;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0.3rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    margin-right: 0.4rem;
+  }
+  .btn:hover { border-color: #fff; }
+  .btn:disabled { color: #666; border-color: #333; cursor: default; }
+  .result-label { color: #888; font-size: 12px; margin-bottom: 0.4rem; }
+  .small { font-size: 12px; }
+  #key-box { display: none; margin-top: 1.2rem; border-top: 1px solid #333; padding-top: 1rem; }
+  #key-nsec { word-break: break-all; font-size: 13px; color: #ddd; margin-bottom: 0.6rem; }
+  #key-box p { margin-bottom: 0.8rem; color: #888; }
+  #account { display: none; }
+  #my-files { display: none; }
+  .file-row { font-size: 12px; margin: 0.3rem 0; word-break: break-all; }
+  .file-row a { color: #ddd; }
+  .file-row .btn { margin-left: 0.6rem; padding: 0.1rem 0.5rem; font-size: 11px; }
+</style>
+
+<div id="drop-zone">
+  <div id="drop-label">[ drop file here or click to browse ]</div>
+  <div class="label">{{if .Limits.MaxUploadBytes}}max {{humanBytes .Limits.MaxUploadBytes}} per file{{end}}{{if .Limits.BytesPerWindow}} &nbsp;·&nbsp; {{humanBytes .Limits.BytesPerWindow}} per {{.Limits.Window}} per network{{end}}{{if .Limits.UploadsPerMinute}} &nbsp;·&nbsp; {{.Limits.UploadsPerMinute}} uploads a minute{{end}}</div>
+</div>
+<input type="file" id="file-input" />
+
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+<div id="status" class="dim">waiting for file...</div>
+
+<div id="result">
+  <div class="result-label">link</div>
+  <div id="result-url"></div>
+  <button id="copy-btn" class="btn">copy</button>
+  <button id="delete-btn" class="btn">delete now</button>
+  <div id="key-box">
+    <div class="result-label">one-time key</div>
+    <div id="key-nsec"></div>
+    <p class="small">keep this only if you want to delete the file before it expires. otherwise ignore it: nothing else is tied to it, and the page forgets it when you leave.</p>
+    <button id="copy-key-btn" class="btn">copy key</button>
+    <button id="save-key-btn" class="btn">save key as file</button>
+  </div>
+</div>
+
+<div id="account" class="ext-notice">
+  signed in as <span id="account-npub"></span> &nbsp;·&nbsp; <a href="#" id="signout-link">sign out</a>
+  <div id="my-files">
+    <div class="result-label" style="margin-top:0.8rem;">your files</div>
+    <div id="my-files-list"></div>
+  </div>
+</div>
+{{else}}
 <div id="drop-zone" onclick="document.getElementById('file-input').click()">
   <div id="drop-label">[ drop file here or click to browse ]</div>
   <div class="label">max 50 MB per file &nbsp;·&nbsp; 100 MB per key</div>
@@ -131,6 +194,7 @@ RETENTION CURVE  (days vs. file size)
   <a href="https://github.com/fiatjaf/nos2x" target="_blank">nos2x</a>, etc.)
   or any nip-07 signer
 </div>
+{{end}}
 
 <div class="line"></div>
 <p style="font-size:12px; color:#888; line-height:2;">
@@ -146,6 +210,22 @@ RETENTION CURVE  (days vs. file size)
   <a href="https://happytavern.co/nostr-verified" target="_blank">happytavern.co</a>
 </p>
 
+{{if .Limits.AnonymousUploads}}
+<!-- Anonymous-uploads mode: a throwaway key per upload, or a real key through
+     mill. The server turns this on with rate_limit.anonymous_uploads; without
+     it the original extension-only page below is served unchanged. -->
+<script>
+  window.ZeroXZeroLimits = {
+    maxUploadBytes: {{.Limits.MaxUploadBytes}},
+    uploadsPerMinute: {{.Limits.UploadsPerMinute}},
+    bytesPerWindow: {{.Limits.BytesPerWindow}},
+    window: {{.Limits.Window}}
+  };
+</script>
+<script src="/scripts/vendor/mill.umd.min.js?v={{assetVersion}}"></script>
+<script src="/scripts/core/throwaway-key.js?v={{assetVersion}}"></script>
+<script src="/scripts/pages/upload.js?v={{assetVersion}}"></script>
+{{else}}
 <script>
 (function () {
   const dropZone  = document.getElementById('drop-zone');
@@ -284,4 +364,5 @@ RETENTION CURVE  (days vs. file size)
   }
 })();
 </script>
+{{end}}
 {{end}}

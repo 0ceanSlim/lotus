@@ -4,3 +4,4 @@ config.yml
 config.*.yml
 .claude/launch.json
 .dev-data/
+.dev-data-0x0/
