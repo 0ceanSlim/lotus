@@ -86,8 +86,12 @@ func SetupRoutes(
 		userGroup.GET("/media", getUserMedia(queries, cdnBaseUrl, log))
 	}
 
+	// trusted reports pubkeys the operator vouches for, for the limiter's
+	// optional exemption.
+	trusted := trustedPubkeys(services)
+
 	// grain-backed API, the drive endpoints and the admin API.
-	registerV1Routes(r, services, queries, store, members, log)
+	registerV1Routes(r, services, queries, store, members, limiter, trusted, log)
 
 	// Page rendering. Everything the templates show about the server comes
 	// from the live config, so admin edits appear on the next request. The
@@ -207,7 +211,6 @@ func SetupRoutes(
 	// per-network limiter after the signature check, so it cannot be dodged
 	// by minting keys; HEAD /upload reports a would-be refusal without
 	// charging anything.
-	trusted := trustedPubkeys(services)
 	r.HEAD("/upload", nostrAuthMiddleware("upload", log), uploadPeek(limiter, trusted), uploadRequirements(services))
 	r.PUT("/upload", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), uploadBlob(services, cdnBaseUrl))
 	r.PUT("/mirror", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), mirrorBlob(services, cdnBaseUrl))

@@ -138,6 +138,7 @@ RETENTION CURVE  (days vs. file size)
   .btn:disabled { color: #666; border-color: #333; cursor: default; }
   .result-label { color: #888; font-size: 12px; margin-bottom: 0.4rem; }
   .small { font-size: 12px; }
+  #foreign-note { display: none; color: #888; margin-top: 0.8rem; }
   #short-box { display: none; margin-top: 1rem; }
   #short-url { word-break: break-all; font-size: 13px; margin-bottom: 0.6rem; }
   #key-box { display: none; margin-top: 1.2rem; border-top: 1px solid #333; padding-top: 1rem; }
@@ -164,6 +165,7 @@ RETENTION CURVE  (days vs. file size)
   <button id="copy-btn" class="btn">copy</button>
   <button id="short-btn" class="btn">short link</button>
   <button id="delete-btn" class="btn">delete now</button>
+  <p id="foreign-note" class="small">this exact file was already on the server under another key, so it keeps that upload's expiry and only that key can delete it. the link and a short link still work.</p>
   <div id="short-box">
     <div class="result-label">short link</div>
     <div id="short-url"></div>

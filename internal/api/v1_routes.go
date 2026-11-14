@@ -17,6 +17,7 @@ import (
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
 	"github.com/0ceanSlim/lotus/internal/nip98"
+	"github.com/0ceanSlim/lotus/internal/ratelimit"
 )
 
 // maxLoginBody caps the login request body we buffer for the NIP-98 payload
@@ -30,7 +31,7 @@ var supportedBuds = []string{"BUD-01", "BUD-02", "BUD-04", "BUD-06", "BUD-08"}
 // media servers, keys, publish), lotus's drive endpoints and the admin API
 // under /api/v1. The legacy /api/auth and /api/user surface stays untouched
 // for frontends that depend on it.
-func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries, store *config.Store, members func() []string, log *zap.Logger) {
+func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries, store *config.Store, members func() []string, limiter *ratelimit.Limiter, trusted trustedPubkeyFunc, log *zap.Logger) {
 	v1 := r.Group("/api/v1")
 
 	// Session and sign-in, backed by grain's session manager.
@@ -66,7 +67,7 @@ func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries
 	// Short link for a blob on the strength of a NIP-98 authorization alone,
 	// for frontends without a server session (the 0x0 page, throwaway keys
 	// included). Same ownership rule as the drive's endpoint.
-	v1.POST("/short/:hash", signedShortLink(services, store, log))
+	v1.POST("/short/:hash", signedShortLink(services, store, limiter, trusted, log))
 
 	// Admin: reads need the operator's session, writes a NIP-98 signature too.
 	v1.GET("/admin/config", adminGetConfig(store))
@@ -322,10 +323,11 @@ func driveCreateShortLink(services core.Services, store *config.Store, log *zap.
 }
 
 // signedShortLink is driveCreateShortLink for a caller with no session: the
-// request carries a NIP-98 authorization (kind 27235 for POST and this URL)
-// signed by the blob's owner. The 0x0 page uses it for both throwaway keys
-// and mill signers, so a short link needs no account there either.
-func signedShortLink(services core.Services, store *config.Store, log *zap.Logger) gin.HandlerFunc {
+// request carries a NIP-98 authorization (kind 27235 for POST and this URL).
+// The 0x0 page uses it for both throwaway keys and mill signers, so a short
+// link needs no account there either. Each request is charged to the
+// network like an upload, so a key cannot fill the table.
+func signedShortLink(services core.Services, store *config.Store, limiter *ratelimit.Limiter, trusted trustedPubkeyFunc, log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxLoginBody))
 		if err != nil {
@@ -338,12 +340,20 @@ func signedShortLink(services core.Services, store *config.Store, log *zap.Logge
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "a short link needs a signed NIP-98 authorization: " + err.Error()})
 			return
 		}
+		if !chargeOnce(c, limiter, trusted, pubkey) {
+			return
+		}
 		mintShortLink(c, services, store, log, pubkey, c.Param("hash"))
 	}
 }
 
 // mintShortLink answers a short-link request for pubkey, already
-// authenticated by the caller, over the blob named by rawHash.
+// authenticated by the caller, over the blob named by rawHash. Links are per
+// pubkey and per blob. On a server whose blobs are publicly listed, any key
+// may shorten any blob (a short link is a bookmark to something already
+// public, and the first uploader of identical bytes owns the row, so the
+// person who just dropped the file often is not the owner); where blobs are
+// private to their uploader, only the owner may.
 func mintShortLink(c *gin.Context, services core.Services, store *config.Store, log *zap.Logger, pubkey, rawHash string) {
 	hash := strings.ToLower(strings.SplitN(rawHash, ".", 2)[0])
 	if !isHexHash(hash) {
@@ -355,7 +365,8 @@ func mintShortLink(c *gin.Context, services core.Services, store *config.Store, 
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "no such blob on this server"})
 		return
 	}
-	if !strings.EqualFold(meta.Pubkey, pubkey) {
+	conf := store.Get()
+	if !strings.EqualFold(meta.Pubkey, pubkey) && !conf.PublicListingEnabled() {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "that blob belongs to a different pubkey"})
 		return
 	}

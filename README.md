@@ -193,7 +193,7 @@ The drive frontend talks to `/api/v1/`, which is grain's client API mounted on l
 | `GET /api/v1/server/info` | This deployment's identity, limits and capabilities. The leading fields use grain's media-server info shape. |
 | `GET /api/v1/drive/files` | The session user's blobs, newest first, with storage totals and any short links. |
 | `POST /api/v1/drive/files/<sha256>/short`, `DELETE /api/v1/drive/short/<code>` | Create or revoke a short link for a blob you own. `GET /s/<code>` redirects to the blob. |
-| `POST /api/v1/short/<sha256>` | Create a short link for a blob you own with a NIP-98 authorization instead of a session; what the 0x0 page uses, throwaway keys included. |
+| `POST /api/v1/short/<sha256>` | Create a short link with a NIP-98 authorization instead of a session; what the 0x0 page uses, throwaway keys included. Owner-only unless `public_listing` is on, where any key may bookmark any blob; counted against the per-network upload limit. |
 
 The legacy `/api/auth/*`, `/api/user/*`, `/api/profile` and `/list-all` endpoints used by the 0x0 frontend are unchanged.
 

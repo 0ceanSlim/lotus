@@ -35,6 +35,7 @@
   const copyKeyBtn = $('copy-key-btn');
   const saveKeyBtn = $('save-key-btn');
   const shortBtn = $('short-btn');
+  const foreignNote = $('foreign-note');
   const shortBox = $('short-box');
   const shortUrl = $('short-url');
   const copyShortBtn = $('copy-short-btn');
@@ -218,8 +219,16 @@
         setStatus('upload succeeded but the response was unreadable', 'err');
         return;
       }
-      setStatus('done.', 'ok');
-      showResult({ sha256: descriptor.sha256 || hash, url: descriptor.url, key });
+      // Identical bytes dedupe to the first uploader's blob: the descriptor
+      // then names another pubkey, and neither this key nor a one-time key
+      // can delete it. The card says so instead of offering buttons that
+      // would fail.
+      const ours = key ? key.pubHex : signer.pubkey;
+      const foreign = !!(descriptor.pubkey && ours && descriptor.pubkey.toLowerCase() !== String(ours).toLowerCase());
+      setStatus(foreign ? 'done. this file was already here.' : 'done.', 'ok');
+      // The one-time key is kept for signing (a short link still needs a
+      // signature) but not shown when it cannot delete the file.
+      showResult({ sha256: descriptor.sha256 || hash, url: descriptor.url, key, foreign });
       if (signer) loadMyFiles();
     } finally {
       busy = false;
@@ -233,7 +242,9 @@
     resultUrl.textContent = entry.url;
     shortUrl.textContent = '';
     shortBox.style.display = 'none';
-    if (entry.key) {
+    foreignNote.style.display = entry.foreign ? 'block' : 'none';
+    deleteBtn.style.display = entry.foreign ? 'none' : '';
+    if (entry.key && !entry.foreign) {
       keyNsec.textContent = entry.key.nsec;
       keyBox.style.display = 'block';
     } else {
@@ -250,7 +261,7 @@
   }
 
   async function deleteCurrent() {
-    if (!current || busy) return;
+    if (!current || current.foreign || busy) return;
     busy = true;
     try {
       setStatus('signing delete...', 'info');

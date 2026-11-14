@@ -108,6 +108,30 @@ func uploadPeek(l *ratelimit.Limiter, trusted trustedPubkeyFunc) gin.HandlerFunc
 	}
 }
 
+// chargeOnce counts one upload-sized action by pubkey from the request's
+// network, with no bytes and no in-flight slot, for lotus endpoints that
+// create rows on a signature alone (short links). It writes the 429 itself
+// and reports whether the caller may go on.
+func chargeOnce(c *gin.Context, l *ratelimit.Limiter, trusted trustedPubkeyFunc, pubkey string) bool {
+	if l == nil {
+		return true
+	}
+	cfg := l.Config()
+	if !cfg.Enabled {
+		return true
+	}
+	if cfg.ExemptTrusted && trusted != nil && trusted(pubkey) {
+		return true
+	}
+	res, denied := l.Reserve(l.ClientIP(c.Request), pubkey, 0)
+	if denied != nil {
+		writeDenial(c, denied)
+		return false
+	}
+	res.Release()
+	return true
+}
+
 func writeDenial(c *gin.Context, d *ratelimit.Denial) {
 	c.Header("Retry-After", strconv.Itoa(d.RetryAfterSeconds()))
 	c.Header(HeaderXReason, d.Reason)
