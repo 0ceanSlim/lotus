@@ -63,6 +63,10 @@ func registerV1Routes(r *gin.Engine, services core.Services, queries *db.Queries
 	v1.GET("/drive/files", driveFiles(services, store, log))
 	v1.POST("/drive/files/:hash/short", driveCreateShortLink(services, store, log))
 	v1.DELETE("/drive/short/:code", driveRevokeShortLink(services, log))
+	// Short link for a blob on the strength of a NIP-98 authorization alone,
+	// for frontends without a server session (the 0x0 page, throwaway keys
+	// included). Same ownership rule as the drive's endpoint.
+	v1.POST("/short/:hash", signedShortLink(services, store, log))
 
 	// Admin: reads need the operator's session, writes a NIP-98 signature too.
 	v1.GET("/admin/config", adminGetConfig(store))
@@ -313,33 +317,60 @@ func driveCreateShortLink(services core.Services, store *config.Store, log *zap.
 		if sess == nil {
 			return
 		}
-		hash := strings.ToLower(strings.SplitN(c.Param("hash"), ".", 2)[0])
-		if !isHexHash(hash) {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid blob hash"})
-			return
-		}
-		meta, err := services.Blob().Meta(c.Request.Context(), hash)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "no such blob on this server"})
-			return
-		}
-		if !strings.EqualFold(meta.Pubkey, sess.PublicKey) {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "that blob belongs to a different pubkey"})
-			return
-		}
-		link, err := services.ShortLinks().GetOrCreate(c.Request.Context(), sess.PublicKey, hash)
-		if err != nil {
-			log.Error("short link create failed", zap.String("hash", hash), zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "could not create a short link"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"success":   true,
-			"code":      link.Code,
-			"short_url": shortLinkURL(store.Get().CdnUrl, link.Code),
-			"url":       meta.Url,
-		})
+		mintShortLink(c, services, store, log, sess.PublicKey, c.Param("hash"))
 	}
+}
+
+// signedShortLink is driveCreateShortLink for a caller with no session: the
+// request carries a NIP-98 authorization (kind 27235 for POST and this URL)
+// signed by the blob's owner. The 0x0 page uses it for both throwaway keys
+// and mill signers, so a short link needs no account there either.
+func signedShortLink(services core.Services, store *config.Store, log *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxLoginBody))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "could not read request body"})
+			return
+		}
+		pubkey, err := nip98.Verify(c.Request, body, store.Get().CdnUrl)
+		if err != nil {
+			c.Header("WWW-Authenticate", "Nostr")
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "a short link needs a signed NIP-98 authorization: " + err.Error()})
+			return
+		}
+		mintShortLink(c, services, store, log, pubkey, c.Param("hash"))
+	}
+}
+
+// mintShortLink answers a short-link request for pubkey, already
+// authenticated by the caller, over the blob named by rawHash.
+func mintShortLink(c *gin.Context, services core.Services, store *config.Store, log *zap.Logger, pubkey, rawHash string) {
+	hash := strings.ToLower(strings.SplitN(rawHash, ".", 2)[0])
+	if !isHexHash(hash) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid blob hash"})
+		return
+	}
+	meta, err := services.Blob().Meta(c.Request.Context(), hash)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "no such blob on this server"})
+		return
+	}
+	if !strings.EqualFold(meta.Pubkey, pubkey) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "that blob belongs to a different pubkey"})
+		return
+	}
+	link, err := services.ShortLinks().GetOrCreate(c.Request.Context(), pubkey, hash)
+	if err != nil {
+		log.Error("short link create failed", zap.String("hash", hash), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "could not create a short link"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"code":      link.Code,
+		"short_url": shortLinkURL(store.Get().CdnUrl, link.Code),
+		"url":       meta.Url,
+	})
 }
 
 func driveRevokeShortLink(services core.Services, log *zap.Logger) gin.HandlerFunc {
