@@ -1,6 +1,6 @@
 # Lotus handoff
 
-State of the codebase as of 2026-10-06, written for whoever picks this up next, human or AI. Read this before touching anything; it records decisions that are not obvious from the code.
+State of the codebase as of 2026-11-14, written for whoever picks this up next, human or AI. Read this before touching anything; it records decisions that are not obvious from the code.
 
 ## What lotus is
 
@@ -24,25 +24,30 @@ internal/api/                gin routes
   admin.go                   admin config read/update, users list, setup claim
   template_engine.go         fs.FS-based html/template rendering, static mounts, PageData
   auth_middleware.go         Blossom kind-24242 auth (uses grain's signature check)
+  ratelimit_middleware.go    per-network upload limiter on PUT /upload, PUT /mirror, HEAD /upload
+  access_log.go              ginzap access/panic log, or the address-free variant while the limiter is on
   auth_controller.go, session_middleware.go, user_stats_controller.go, profile_controller.go
                              LEGACY surface for the 0x0 frontend. Do not change its wire shapes.
   bud0X_controller.go        Blossom handlers
 internal/config/             Config type, Store (load, validate, hot-apply hook, atomic write-back), default.yml
 internal/core/               domain interfaces (Services, BlobStorage, ShortLinkService, ...)
 internal/service/            implementations; services.go wires them and exposes Apply(config)
+internal/ratelimit/          in-memory per-network upload limiter (token buckets, keyed hashes, client IP rule)
 internal/db/                 hand-written sqlc-style queries + embedded migrations (sql-migrate)
 internal/nip98/              NIP-98 HTTP auth verification (+ tests)
 internal/grainclient/        grain client init (session manager, relay pool, cleanups)
 internal/bud01..06, bloburl, hashing, zeroxzero
 frontends/drive/             the drive frontend (embedded; see below)
-frontends/0x0/               the ephemeral 0x0-backed deployment's frontend. Frozen. Do not touch.
+frontends/0x0/               the ephemeral 0x0-backed deployment's frontend. Everything new in it is
+                             behind rate_limit.anonymous_uploads; with that off it renders as before.
 .dev-data/                   gitignored local data dir (config.yml, db/, web -> junction to frontends/drive)
-.claude/launch.json          gitignored dev launcher: go run ./cmd/lotus --data-dir .dev-data
+.dev-data-0x0/               gitignored second data dir mirroring the 0x0 deployment (web -> frontends/0x0)
+.claude/launch.json          gitignored dev launcher: lotus-dev (8484) and lotus-0x0 (8585)
 ```
 
 ## Hard invariants
 
-1. **The 0x0 deployment must keep working unchanged.** It is a separate managed deployment with its own data dir whose `web/` holds `frontends/0x0`. It depends on the legacy endpoints `/api/auth/*`, `/api/user/*`, `/api/profile`, `/list-all`, `/stats`, the page routes `/`, `/my-media`, `/settings`, and static `/scripts`, `/res`. Those stay as they are. `public_listing` defaults to true (nil) precisely so that deployment needs no config edit.
+1. **The 0x0 deployment must keep working unchanged.** It is a separate managed deployment (data dir `H:\blossom-server-0x0`, public URL `https://0x0.oslim.dev`, 0x0 backend at `localhost:5001`, `log_level: TRACE`) whose `web/` holds `frontends/0x0`. It depends on the legacy endpoints `/api/auth/*`, `/api/user/*`, `/api/profile`, `/list-all`, `/stats`, the page routes `/`, `/my-media`, `/settings`, and static `/scripts`, `/res`. Those stay as they are. `public_listing` defaults to true (nil) precisely so that deployment needs no config edit. Since 2026-11-14 the 0x0 frontend has an opt-in second mode (anonymous uploads and mill sign-in, see below) that the server switches on with `rate_limit.anonymous_uploads`; with it off, `index.html` renders the original markup and inline script from its `{{else}}` branch, so the deployed page is unchanged until the operator flips the config.
 2. **Blob URLs never change.** They are `cdn_url + "/" + sha256 + extension`. Organizing, naming, short links and anything else in the drive are metadata beside the blob.
 3. **A write session proves key possession.** grain's login trusts the claimed pubkey; lotus wraps it (`v1Login`) and requires a NIP-98 authorization signed by that pubkey. Read-only sessions can be created unsigned but cannot see or change files. Never add an endpoint that reads or mutates a user's data from a read-only session.
 4. **Admin mutations are NIP-98 signed** by the operator's key, on top of the operator's session. The admin shell and admin reads are session-gated only.
@@ -59,6 +64,23 @@ Keys added during the rebuild: `public_listing`, `index_relays`, and the `server
 
 `admin_pubkey` empty means unclaimed: every page shows a banner and `/setup` lets the first signed-in user claim it (`store.Claim`), which also adds an UPLOAD rule for them. Access rules: a resource with no rules is denied (changed from the old "invalid state" error).
 
+### `rate_limit` block (added 2026-11-14)
+
+Per-network upload limits, the server half of anonymous uploads. All hot (the apply hook in `main.go` chains `services.Apply` and `limiter.Reload`); the block is `omitempty`, so a deployment that never sets it never sees it written back.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Mount the limiter. Off means every path below is a no-op and logging is exactly as before. |
+| `anonymous_uploads` | `false` | The 0x0 frontend uploads with a browser-made throwaway key and offers mill sign-in. Requires `enabled` (validated). Also exposed as `anonymous_uploads` on `/api/v1/server/info` and as `Limits.AnonymousUploads` in `PageData`. |
+| `uploads_per_minute_per_ip` | `10` in default.yml | Token bucket per address: burst and sustained rate. `0` = no limit on this dimension. |
+| `bytes_per_window_per_ip` | `524288000` (500 MB) | Byte bucket per address: a burst of this much, refilled evenly over `window`. Must be ≥ `max_upload_size_bytes` when both are set (validated). `0` = no limit. |
+| `window` | `"24h"` | Go duration. Also the lifetime of the pubkey→address binding. |
+| `max_concurrent_per_ip` | `3` | Uploads in flight per address. `0` = no limit. |
+| `exempt_trusted_pubkeys` | `false` | Skip the limiter for pubkeys named in an ALLOW UPLOAD rule or listed in a nostr.json (`ACRService.IsTrusted`). The ALL rule does not count. |
+| `trusted_proxies` | none | Addresses/CIDRs, besides loopback (always trusted), whose `CF-Connecting-IP` / `X-Real-IP` header names the real client. |
+
+`enabled: true` with all three limits at zero is rejected, as is `anonymous_uploads` without `enabled`.
+
 ## Frontend (`frontends/drive`)
 
 Vanilla JS modules, htmx 2 (vendored), Tailwind v4 **browser build** (vendored, compiles at runtime; the `@theme` block in `layout.html` registers token names, `static/css/tokens.css` holds the real values per theme). No build step, no CDN requests. Static assets are served with `Cache-Control: no-cache`.
@@ -70,7 +92,37 @@ Scripts, load order fixed in `layout.html` with `defer`:
 - `theme.js` (sync, before paint), `mill-bridge.js` (sign-in, NIP-98 login, signer restore across reloads, `window.ensureSigner`, `window.lotusNip98.header`, `window.lotusAfterLogin` hook), `navigation.js` (header state, dropdown, toasts, `window.lotusFmt`, `window.lotusCopy`), `publish.js` (sign + stream-publish with per-relay toast, stamps `["client","lotus"]`), `media-servers.js` (kind 10063 list editor + drive banner), `landing.js`, `drive.js`, `settings.js`, `setup.js`, `admin.js`.
 - Views: `index.html` (server page, always at `/`), `drive.html` (`/drive`), `settings.html` (`/drive/settings`), `setup.html`, `setup-claimed.html`, `admin.html`. Each view calls its module's `init()` via a small inline script that tolerates either load order.
 
-Pages are server-rendered Go templates from an `fs.FS`: the data dir's `web/` if present, else the embedded copy. `PageData` carries `Server` (identity), `LoggedIn`, `Pubkey`, `IsAdmin`, `Unclaimed`, `Data` (per-page payload).
+Pages are server-rendered Go templates from an `fs.FS`: the data dir's `web/` if present, else the embedded copy. `PageData` carries `Server` (identity), `Limits` (max upload size, and when the limiter is on: `AnonymousUploads`, per-network numbers and a human `Window`), `LoggedIn`, `Pubkey`, `IsAdmin`, `Unclaimed`, `Data` (per-page payload). Template funcs: `assetVersion`, `shortKey`, `humanBytes`.
+
+## Frontend (`frontends/0x0`) and anonymous uploads
+
+The 0x0 page is one self-contained Go template (`views/index.html`, black, Courier, no framework). It now has two branches on `.Limits.AnonymousUploads`:
+
+- **Off (the deployed state until the config is flipped):** the original markup and inline script, verbatim. Visitors sign the kind-24242 upload with a NIP-07 extension via `window.nostr`. No session, no mill.
+- **On:** the drop zone uploads without a sign-in. `scripts/pages/upload.js` makes a fresh keypair per upload with `scripts/core/throwaway-key.js`, signs the upload authorization with it, `PUT /upload`s with a base64url (BUD-11) token, and shows the link plus the nsec once with "delete now", "copy key" and "save key as file" buttons. The secret lives only in page memory. A "sign in" link opens mill (`scripts/vendor/mill.umd.min.js`, same build as the drive's) themed to the page by literal `--mill-*` values; methods are extension, NIP-46, pomegranate (mill's default njump ecosystem, `pomegranate: true`), and under "more options" pasted key, new key and Amber (clipboard return, so no callback route). While signed in, uploads and deletes are signed by the mill signer, the page lists the pubkey's blobs from `GET /list/<pubkey>` with a delete button each, and the signer is restored across reloads with `MILL.restore` from `{method, pubkey}` in `localStorage["0x0.signer"]`. **No server session is created on either path**: nothing on the 0x0 page needs one, every Blossom request carries its own signed authorization, and the legacy `/api/auth/*` surface stays untouched.
+
+`throwaway-key.js` is a dependency-free BIP-340 signer (BigInt arithmetic, WebCrypto SHA-256), bech32 for nsec/npub, and NIP-01 event signing, written because mill's public API exposes no key generation or private-key signer and vendoring noble would have meant a bundling step. It is only ever used for throwaway keys; real keys are signed by mill. `internal/api/throwaway_key_test.go` runs it under node against the first BIP-340 vectors, grain's nsec/npub decoders, grain's `validation.CheckSignature` (the server's own check) and `nostrAuthMiddleware`; it skips when node is absent.
+
+The legacy pages `/my-media` and `/settings` and the scripts under `scripts/core` and `scripts/pages` other than `upload.js` are left exactly as they were. Note that the 0x0 layout never loads them and never renders the header, so on the 0x0 deployment those pages are unreachable and were dormant before this change too.
+
+### Limiter design (`internal/ratelimit`)
+
+Why: throwaway keys make per-pubkey quota meaningless, so the limits attach to the client network and apply to every upload, signed by a fresh key or a real one, after the signature check and before the handler. Minting keys buys nothing.
+
+- Three token buckets per address: uploads per minute (count), bytes per window (capacity `bytes_per_window_per_ip`, refilled at capacity/window per second, so "500 MB per day" is a 500 MB burst then a steady 500 MB/day), and uploads in flight. Each dimension is independent and `0` disables it.
+- **pubkey → address binding:** a pubkey seen for the first time is tied to the address it came from for one window (fixed TTL from first sight, not refreshed). While bound, its uploads from any other address must fit, and are charged to, both that address and the current one. Switching addresses with the same key therefore charges the first one; switching keys at the same address charges that address. The binding is never consulted for anything else.
+- **Privacy:** the tables are keyed by `HMAC-SHA256(secret, kind || 0 || value)[:16]` with a 32-byte secret drawn from `crypto/rand` at startup and held only in the process. No address or pubkey is stored in clear, nothing is written to the database, log or disk, a restart forgets everything, and no address↔pubkey association can outlive one window. IPv6 is bucketed by /64. Idle buckets are swept after a window; the table is capped at 250k entries with idle ones evicted first (which only makes the limiter more lenient).
+- **Client address:** `Limiter.ClientIP` uses the peer address unless the peer is loopback or in `trusted_proxies`, in which case `CF-Connecting-IP`, then `X-Real-IP`, is believed. `X-Forwarded-For` is deliberately not read (clients can prepend to it). The Cloudflare tunnel on the 0x0 machine connects from loopback, so no config is needed there. gin's own `ClientIP()` (trusts all proxies by default) is not used for limiting.
+- **Refusals:** 429 with `Retry-After` (seconds until a token / enough bytes / 5 s for concurrency; the whole window for a file bigger than the budget) and `X-Reason`, plus the usual JSON `{"message"}`; `HEAD /upload` reports the same without charging and adds `X-Upload-Message` for BUD-06 clients. `PUT /mirror` is charged the mirrored blob's size via `ctxUploadBytes` set by the handler. The byte charge is the declared `Content-Length` up front (so a budget check happens before the body is read) and whatever more was actually read afterwards; a chunked body is charged after the fact.
+- **Logging:** while `enabled`, the access log is lotus's own variant of ginzap's line without the `ip` field, and the panic recovery logs route and stack without `httputil.DumpRequest` (whose headers would carry the forwarded address). Both are chosen per request, so flipping the flag needs no restart. With the limiter off, ginzap's standard middlewares run exactly as before. The limiter itself logs nothing. Outside lotus, the Cloudflare tunnel/dashboard and the 0x0 backend (`localhost:5001`) keep their own logs; the 0x0 backend sees only lotus's loopback address, Cloudflare sees everything.
+
+### Decisions on the open questions (2026-11-14)
+
+- **Budget numbers.** Defaults in `default.yml`: 10 uploads/min, 500 MB per 24 h, 3 in flight per address. The 0x0 deployment allows 50 MB per file and nominally 100 MB per key (the 0x0 blob service never enforced that quota: `ValidateStorageQuota` is a no-op there). 500 MB/day/address is ten of the old per-key quotas, enough for a household or office behind one address, and bounds an abuser to ~15 GB/month per address, all of it expiring within 30–90 days. The dev config uses 4/min to make the 429 path easy to reach by hand.
+- **Shared addresses (CGNAT, Tor, VPN).** "Signed in" is not a trust signal on a server where anyone can mint a key, so there is no bypass for having a session. The flag that exists is `exempt_trusted_pubkeys`, where trusted means operator-vouched: an explicit ALLOW UPLOAD rule or nostr.json membership. Default **off** (the same rules for everyone); the operator turns it on if members behind shared addresses get throttled by strangers. Members also keep their per-pubkey quota regardless.
+- **Save the nsec as a file.** Yes. The clipboard is lost on the next copy, and for a visitor without an extension a file is the only durable place; the key is worth nothing beyond deleting one ephemeral file, so a saved copy carries little risk. The file also records the blob URL and npub.
+- **Hashed in-memory vs. a per-connection limiter with no address at all.** Hashed in-memory, as implemented. A limiter with no notion of address cannot carry anything between connections, and an attacker opens a new connection per upload, so it degrades to a global limit that punishes everyone equally. The keyed-hash table is the least state that still attaches cost to a network; its privacy bar is set by the per-process secret, memory-only tables, the one-window binding TTL, /64 bucketing and the address-free access log. The remaining exposure is a live memory dump of the process together with its secret, which recovers hashes but not addresses without a brute-force over the address space, and whatever Cloudflare logs on its side.
+- **Also decided:** `anonymous_uploads` lives inside `rate_limit` and is refused without `enabled`, so the dangerous combination cannot be configured. Loopback is always a trusted proxy (the only sane local setup), `trusted_proxies` only adds. The drive frontend ignores the block entirely.
 
 ## HTTP surface (new)
 
@@ -87,7 +139,7 @@ Pages are server-rendered Go templates from an `fs.FS`: the data dir's `web/` if
 | `GET/POST /api/v1/admin/config`, `GET /api/v1/admin/users` | admin; POST needs NIP-98 |
 | `GET/POST /setup`, `GET /admin` | claim flow, admin shell |
 
-The Blossom endpoints are unchanged: `GET|HEAD /<sha256>`, `PUT /upload`, `HEAD /upload`, `PUT /mirror`, `DELETE /<sha256>`, `GET /list/<pubkey>` (public, on purpose: other clients use it), `GET /stats`, `GET /list-all` (config-gated).
+The Blossom endpoints are unchanged: `GET|HEAD /<sha256>`, `PUT /upload`, `HEAD /upload`, `PUT /mirror`, `DELETE /<sha256>`, `GET /list/<pubkey>` (public, on purpose: other clients use it), `GET /stats`, `GET /list-all` (config-gated). With `rate_limit.enabled`, `PUT /upload`, `PUT /mirror` and `HEAD /upload` can answer 429 with `Retry-After` and `X-Reason` (see the limiter design). Authorization tokens may be standard base64 or base64url, padded or not (BUD-11 asks for unpadded base64url; the 0x0 page sends that).
 
 ## Database
 
@@ -103,11 +155,15 @@ go run ./cmd/lotus --data-dir .dev-data
 
 `.dev-data/web` is a junction to `frontends/drive`, so template, script and CSS edits show on reload. Go and config edits need a restart. The dev config mirrors production with localhost URLs; the owner's key is the admin key there. grain keeps sessions in memory, so **every restart signs everyone out**.
 
-Tests: `go test ./...` covers NIP-98, delete ownership, short links, blob URLs. There is no browser test harness; the drive, settings, setup, claim and admin flows were verified by hand.
+A second data dir, `.dev-data-0x0` (gitignored, `web` junction to `frontends/0x0`, launcher `lotus-0x0` on 8585), mirrors the 0x0 deployment's config with the 0x0 backend **off** (blobs go to SQLite; there is no local 0x0 instance and the production one at `localhost:5001` must not receive test uploads) and `rate_limit` on with `anonymous_uploads: true` and 4 uploads/min. Set `anonymous_uploads: false` and `enabled: false` there to see the original page.
+
+Tests: `go test ./...` covers NIP-98, delete ownership, short links, blob URLs, config validation and write-back of the `rate_limit` block, the limiter (buckets, byte window, binding TTL, keyed hashes, sweep, reload, client-address trust rule), the middleware (429 headers, body counting, mirror charging, HEAD peek, trusted exemption, hot enable), and the JS throwaway signer under node (skipped without node). There is no browser test harness; the drive, settings, setup, claim and admin flows, and on the 0x0 page the anonymous upload, nsec display, delete, 429, mill sign-in with a pasted key, signed-in upload/list/delete, restore across reload and sign-out, were verified by hand in a browser. A tip for driving the drop zone without a file dialog: build a `File`, put it in a `DataTransfer` and dispatch a `DragEvent('drop')` on `#drop-zone`.
 
 ## Production
 
 The live instance is `https://blossom.oslim.dev`, data dir `H:\blossom-server` on the owner's Windows machine (config.yml, db with ~2.4 GB, web/ holding the old gallery frontend). Deploy: build, stop lotus, delete or replace `web/` so the embedded drive serves, add `public_listing: false` and a `server` block (see `.dev-data/config.yml` for the owner's values), start. Migrations apply automatically. Remember the first admin save strips comments from config.yml.
+
+The 0x0 instance is `https://0x0.oslim.dev`, data dir `H:\blossom-server-0x0` (api_addr `0.0.0.0:8004`, `web/` = `frontends/0x0` modulo CRLF, 0x0 backend at `localhost:5001`, behind a Cloudflare tunnel). Rolling out anonymous uploads there: build; copy `frontends/0x0` over `web/` (the new files are `scripts/vendor/mill.umd.min.js`, `scripts/core/throwaway-key.js`, `scripts/pages/upload.js` and the changed `views/index.html`); add the `rate_limit` block from `default.yml` with `enabled: true` and `anonymous_uploads: true` (the per-file limit there is 50 MB, so the 500 MB budget validates); restart. Order matters only in one way: a binary without this change ignores the block, and a binary with it serves the old page until the block is on, so either can go first. Check after: the page says "no account needed", `GET /api/v1/server/info` has `"anonymous_uploads":true`, the access log lines have no `ip` field, and a fifth quick upload from one address gets 429. To fall back, set `anonymous_uploads: false` (hot, via the file and a restart since there is no admin page on that frontend) and the original page is back.
 
 ## Decisions already made (don't relitigate)
 
@@ -126,7 +182,7 @@ The live instance is `https://blossom.oslim.dev`, data dir `H:\blossom-server` o
 2. **Files table and organization.** Per-user `files` rows; folders as metadata; names; trash with restore; search. Keep `blobs` deduplicated by hash. Update `ListMeta`, `Meta`, delete and the drive listing accordingly; the 0x0 backend keeps working through the same interfaces.
 3. **Share pages.** `/f/<code>` style landing pages with preview, name, owner profile (via grain), and the short-link code; folder share pages.
 4. **"Used in" context.** Fetch the user's notes from their outbox with grain, scan content and `imeta` tags for this server's URLs/hashes, cache the map, show it per file and warn before deleting a file embedded in posts.
-5. **Safety.** BUD-09 `PUT /report` (kind 1984 with `x` tags) into a queue; a `blocked_hashes` table enforced on upload and mirror; a report queue and blob search/delete/block in admin; optional ClamAV over clamd; default MIME deny for executables; per-pubkey upload rate limit.
+5. **Safety.** BUD-09 `PUT /report` (kind 1984 with `x` tags) into a queue; a `blocked_hashes` table enforced on upload and mirror; a report queue and blob search/delete/block in admin; optional ClamAV over clamd; default MIME deny for executables. (The per-network upload limiter exists since 2026-11-14; a per-pubkey rate limit on top of it is still open for the drive, where keys are vetted.)
 6. **Nostr extras.** "Pull in my blobs from my other servers" (resolve the user's 10063 list, list each server, BUD-04 mirror here); publish a drive as a 30563-compatible event; client-side encrypted files with NIP-44 key sharing.
 7. **Polish.** Precompiled Tailwind CSS for production (the browser build warns it is for development), server-side thumbnails/blurhash emitted as BUD-08 tags, a members section on the server page, the kind 10063 "set up" check on the server page.
 
@@ -139,3 +195,7 @@ The live instance is `https://blossom.oslim.dev`, data dir `H:\blossom-server` o
 - The legacy `/settings` route renders the drive's `settings.html` ungated on a drive deployment; it is unlinked and the scripts handle the logged-out state. `/drive/settings` is the gated one.
 - `.gitignore` ignores `config.*.yml`, so a committed example config needs a different name (the embedded default is `internal/config/default.yml`).
 - Windows: the dev `web` link is an NTFS junction (`mklink /J`); `os.DirFS` follows it fine.
+- mill's `.mill-btn.primary` puts fixed white text on `--mill-accent`, so a white accent makes the "Connect" button unreadable; the 0x0 theme uses `#777`.
+- Dedup by hash bites the 0x0 "your files" list: identical bytes uploaded earlier by any key (a throwaway one included) stay owned by that first key, so a signed-in re-upload of the same bytes returns the existing descriptor and does not appear under the signed-in pubkey. The files-table rework (next steps, item 2) is the fix.
+- `mirrorBlob` in `bud04_controller.go` has pre-existing missing `return`s after its early `Abort`s (pubkey/body/URL checks); not touched in the limiter work, worth fixing when next in there.
+- `ratelimit_middleware_test.go` and the limiter tests use a fake clock through the unexported `now` field; keep new limiter tests in package `ratelimit` for that reason.

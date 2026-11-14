@@ -27,7 +27,7 @@ The drive frontend is compiled into the binary and served by default. A `web/` f
 | Frontend | Path | Description |
 |----------|------|-------------|
 | `drive` | `frontends/drive/` | The main frontend. Server page for visitors, a personal drive for signed-in users. Built on grain's `/api/v1` session API and mill. Actively developed. |
-| `0x0` | `frontends/0x0/` | Frontend for ephemeral deployments backed by a self-hosted 0x0 instance, with a public gallery. Uses the legacy `/api/auth` session API, which the server keeps serving unchanged. |
+| `0x0` | `frontends/0x0/` | Frontend for ephemeral deployments backed by a self-hosted 0x0 instance, with a public gallery. Uses the legacy `/api/auth` session API, which the server keeps serving unchanged. With `rate_limit.anonymous_uploads` on, the drop zone needs no sign-in: a throwaway key made in the browser signs the upload and its nsec is shown once for a later delete, with optional sign-in through mill (extension, bunker, Amber, pomegranate, pasted key). |
 
 To run a frontend from disk instead of the embedded one, copy it into your data directory:
 
@@ -196,6 +196,12 @@ The drive frontend talks to `/api/v1/`, which is grain's client API mounted on l
 
 The legacy `/api/auth/*`, `/api/user/*`, `/api/profile` and `/list-all` endpoints used by the 0x0 frontend are unchanged.
 
+### Per-network upload limits
+
+For a public, free-for-all server (anyone can mint a Nostr key, so a per-pubkey quota means nothing) the `rate_limit` block attaches limits to the client's network address instead: uploads per minute, a byte budget per window, and uploads in flight, applied to every `PUT /upload` and `PUT /mirror` after the signature check. A pubkey stays tied to the address it was first seen from for one window, so switching addresses with the same key charges both. Refused requests get `429` with `Retry-After` and `X-Reason`; `HEAD /upload` reports a would-be refusal without charging.
+
+Addresses are held only in memory, as keyed hashes under a secret the process draws at startup, and nothing about them is written to the database, the log or disk; while the limiter is on, the access log drops the client address too. Behind a Cloudflare tunnel or nginx on the same machine the real client comes from `CF-Connecting-IP` / `X-Real-IP`, which are believed only from loopback and `trusted_proxies`. The block is off by default; `internal/config/default.yml` documents every key and `HANDOFF.md` the design and the decisions behind the defaults.
+
 ## Local development
 
 ```sh
@@ -222,6 +228,7 @@ go run ./cmd/lotus --data-dir .dev-data
 | `public_listing` | Serve the unauthenticated all-blobs listing at `/list-all` (default `true`; drive deployments set `false`) |
 | `server` | Identity shown on the server page and in the sign-in modal: `name`, `description`, `icon`, `contact`, `cost`, `membership_url`, `terms_url`, `privacy_url`, and `profile_url`, the template every pubkey links through with `{npub}` or `{hex}` replaced (default njump; point it at your own client, e.g. `https://wheat.oslim.dev/p/{npub}`) |
 | `index_relays` | Relays grain uses to resolve profiles and relay lists (defaults to grain's built-in seed list) |
+| `rate_limit` | Per-network upload limits and anonymous uploads (off by default): `enabled`, `anonymous_uploads`, `uploads_per_minute_per_ip`, `bytes_per_window_per_ip`, `window`, `max_concurrent_per_ip`, `exempt_trusted_pubkeys`, `trusted_proxies` (see above) |
 
 ## Roadmap
 
