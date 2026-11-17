@@ -86,11 +86,15 @@
 <p style="font-size:clamp(4rem,12vw,9rem); font-weight:900; line-height:1; letter-spacing:-2px;">0x0</p>
 <p style="color:#888; font-size:12px; margin-top:0.6rem;">0x0.oslim.dev &mdash; ephemeral blossom storage &mdash; files expire, links work until they don't</p>
 {{if .Limits.Retention}}
-<p style="color:#888; font-size:12px; margin-top:0.5rem; max-width:44rem; line-height:1.6;">
-  runs on <span style="color:#ddd;">{{template "protocolName"}}</span> ({{template "protocolLong"}}): a fixed-size store that sets each file's lifetime from its size and how busy the server is. quiet server, longer lifetimes; busy server, shorter ones, so the disk holds steady and never fills. you see the exact expiry before you upload, and that's the one you keep.
-  <a href="/whitepaper">read the whitepaper &rarr;</a>
+<p style="color:#888; font-size:12px; margin-top:0.5rem;">
+  runs on <span style="color:#ddd;">{{template "protocolName"}}</span> ({{template "protocolLong"}}) &mdash; <a href="/whitepaper">whitepaper</a>
 </p>
 {{end}}
+{{if .OnionUrl}}{{if not .ViaOnion}}
+<p style="color:#888; font-size:12px; margin-top:0.4rem; word-break:break-all;">
+  also on tor &mdash; <a href="{{.OnionUrl}}">{{.OnionUrl}}</a>
+</p>
+{{end}}{{end}}
 
 <div class="line"></div>
 
@@ -293,6 +297,9 @@ RETENTION CURVE  (days vs. file size)
   blossom layer &mdash;
   <a href="https://github.com/hzrd149/blossom" target="_blank">blossom protocol</a>
   <br>
+  {{if .OnionUrl}}{{if .ViaOnion}}clearnet &mdash; <a href="{{.ClearnetUrl}}">{{.ClearnetUrl}}</a>{{else}}tor &mdash; <a href="{{.OnionUrl}}" style="word-break:break-all;">{{.OnionUrl}}</a>{{end}}
+  <br>
+  {{end}}
   need persistent storage? &mdash;
   <a href="https://blossom.oslim.dev" target="_blank">blossom.oslim.dev</a>
   (membership at <a href="https://happytavern.oslim.dev" target="_blank">happytavern.oslim.dev</a>)

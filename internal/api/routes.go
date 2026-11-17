@@ -152,6 +152,9 @@ func SetupRoutes(
 			limits.Window = ratelimit.HumanDuration(rl.WindowDuration())
 		}
 		data := PageData{Title: title, Theme: "dark", Server: view, Limits: limits, Unclaimed: !conf.Claimed()}
+		data.OnionUrl = strings.TrimRight(conf.Onion.Url, "/")
+		data.ViaOnion = ratelimit.IsOnion(ctx.Request)
+		data.ClearnetUrl = strings.TrimRight(conf.CdnUrl, "/")
 		if sess := grainSession(ctx.Request); sess != nil {
 			data.LoggedIn = true
 			data.Pubkey = sess.PublicKey

@@ -58,6 +58,12 @@ type PageData struct {
 	Pubkey    string
 	IsAdmin   bool
 	Unclaimed bool
+	// OnionUrl is the hidden-service address when one is configured;
+	// ViaOnion says this request came through it, and ClearnetUrl is the
+	// public address to point back to.
+	OnionUrl    string
+	ViaOnion    bool
+	ClearnetUrl string
 	// Page-specific payload, set by the handler that renders the view.
 	Data any
 }
