@@ -85,15 +85,18 @@
 {{end}}
 <p style="font-size:clamp(4rem,12vw,9rem); font-weight:900; line-height:1; letter-spacing:-2px;">0x0</p>
 <p style="color:#888; font-size:12px; margin-top:0.6rem;">0x0.oslim.dev &mdash; ephemeral blossom storage &mdash; files expire, links work until they don't</p>
+{{if .Limits.Retention}}
+<p style="color:#888; font-size:12px; margin-top:0.5rem; max-width:44rem; line-height:1.6;">
+  runs on <span style="color:#ddd;">{{template "protocolName"}}</span>: a fixed-size store that sets each file's lifetime from its size and how busy the server is. quiet server, longer lifetimes; busy server, shorter ones, so the disk holds steady and never fills. you see the exact expiry before you upload, and that's the one you keep.
+  <a href="/whitepaper">read the whitepaper &rarr;</a>
+</p>
+{{end}}
 
 <div class="line"></div>
 
 {{if .Limits.AnonymousUploads}}
 <p>drop a file. get a link. no account needed.</p>
 <p class="dim" style="margin-top:0.4rem;">a one-time key is made in your browser to sign the upload and forgotten unless you keep it. <a href="#" class="signin-link">sign in</a> to upload under your own nostr key instead. nothing here is permanent. that's the point.</p>
-{{if .Limits.Retention}}
-<p class="dim" style="margin-top:0.4rem;">how long a file lives depends on its size and on how busy the server is: lifetimes stretch when it's quiet and shrink when it's busy, so the disk never fills. you see the exact expiry before you upload, and that's the one you get.</p>
-{{end}}
 {{if .Limits.Evicts}}
 <p class="dim" style="margin-top:0.4rem; font-size:12px;">when the server is full, the oldest and largest files are removed to make room. the retention curve is a ceiling, not a promise.</p>
 {{end}}
@@ -107,7 +110,7 @@
 {{if .Limits.Retention}}
 <style>
   #ret { display: none; }
-  #ret svg { width: 100%; height: auto; display: block; font-family: inherit; font-size: 11px; }
+  #ret svg { width: 100%; height: auto; display: block; font-family: inherit; font-size: 12px; }
   #ret svg text { fill: #777; font-weight: 400; }
   #ret svg text.label { fill: #555; }
   #ret svg text.you { fill: #fff; font-weight: 600; }
@@ -126,12 +129,12 @@
 </style>
 <section id="ret">
   <div class="head"><span>RETENTION CURVE &nbsp;(days vs. file size)</span><span id="ret-updated">live</span></div>
-  <svg id="ret-curve" viewBox="0 0 600 220" role="img" aria-label="retention in days by file size"></svg>
+  <svg id="ret-curve" viewBox="0 0 960 300" role="img" aria-label="retention in days by file size"></svg>
   <pre id="ret-examples"></pre>
-  <div class="head" style="margin-top:1.2rem;"><span>STORAGE</span><span><a href="https://github.com/0ceanSlim/lotus/tree/main/docs/self-regulating-storage" target="_blank" rel="noopener">how it works</a></span></div>
+  <div class="head" style="margin-top:1.2rem;"><span>STORAGE</span><span><a href="/whitepaper">how it works</a></span></div>
   <div id="ret-bar"><div id="ret-used"></div><div class="tick" id="ret-target" title="target"></div><div class="tick hard" id="ret-hard" title="uploads refused above this"></div></div>
   <pre id="ret-storage"></pre>
-  <svg id="ret-hist" viewBox="0 0 600 50" preserveAspectRatio="none" style="height:50px;" aria-label="fill history"></svg>
+  <svg id="ret-hist" viewBox="0 0 960 50" preserveAspectRatio="none" style="height:50px;" aria-label="fill history"></svg>
   <div class="head" style="margin-top:0.2rem;"><span id="ret-hist-label"></span></div>
 </section>
 {{else}}

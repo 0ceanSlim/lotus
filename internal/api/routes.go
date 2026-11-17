@@ -223,6 +223,14 @@ func SetupRoutes(
 	r.GET("/settings", func(ctx *gin.Context) {
 		render(ctx, pageData(ctx, "Settings"), "settings.html")
 	})
+	// The storage protocol's whitepaper, for frontends that ship one.
+	r.GET("/whitepaper", func(ctx *gin.Context) {
+		if _, err := fs.Stat(webFS, "views/whitepaper.html"); err != nil {
+			ctx.String(http.StatusNotFound, "not found")
+			return
+		}
+		render(ctx, pageData(ctx, "Whitepaper"), "whitepaper.html")
+	})
 
 	staticDir(r, webFS, "/static", "static")
 	staticDir(r, webFS, "/scripts", "scripts")

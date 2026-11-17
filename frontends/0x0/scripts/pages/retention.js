@@ -50,7 +50,12 @@
     const svg = $('ret-curve');
     if (!svg || !state) return;
     svg.textContent = '';
-    const W = 600, H = 220, L = 46, R = 10, T = 12, B = 30;
+    // Draw in the pixels the chart actually gets, so text stays readable on
+    // a phone instead of shrinking with a fixed-size drawing.
+    const W = Math.max(300, Math.round(svg.getBoundingClientRect().width) || 960);
+    const H = W < 600 ? 230 : 300, L = 44, R = 12, T = 34, B = 28;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    const narrow = W < 600;
     const sizeMax = state.size_max;
     const maxDays = Math.max(1, Math.ceil(Math.max(...state.curve.map((p) => p.retention)) / DAY));
     const yMax = niceCeil(maxDays);
@@ -65,11 +70,11 @@
       svg.appendChild(el('line', { x1: L, y1: y(d), x2: W - R, y2: y(d), class: 'grid' }));
       svg.appendChild(el('text', { x: L - 6, y: y(d) + 4, 'text-anchor': 'end' }, String(Math.round(d))));
     }
-    for (let k = 0; k <= 4; k++) {
+    for (let k = 0; k <= 4; k += narrow ? 2 : 1) {
       const s = (sizeMax * k) / 4;
       svg.appendChild(el('text', { x: x(s), y: H - B + 16, 'text-anchor': k === 0 ? 'start' : k === 4 ? 'end' : 'middle' }, fmtBytes(s).replace(' ', '')));
     }
-    svg.appendChild(el('text', { x: L + 4, y: T + 2, class: 'label' }, 'days'));
+    svg.appendChild(el('text', { x: L - 6, y: T - 16, 'text-anchor': 'end', class: 'label' }, 'days'));
 
     // the curve, sampled finely on a linear axis
     let d = '';
@@ -86,7 +91,8 @@
       svg.appendChild(el('line', { x1: x(s), y1: y(days), x2: x(s), y2: H - B, class: 'mark' }));
       svg.appendChild(el('circle', { cx: x(s), cy: y(days), r: 4, class: 'dot' }));
       const right = x(s) > W * 0.7;
-      svg.appendChild(el('text', { x: x(s) + (right ? -8 : 8), y: y(days) - 8, 'text-anchor': right ? 'end' : 'start', class: 'you' }, 'your file: ' + fmtDuration(lifetimeFor(s))));
+      const below = y(days) < T + 24; // no room above: put the label under the dot
+      svg.appendChild(el('text', { x: x(s) + (right ? -10 : 10), y: y(days) + (below ? 20 : -10), 'text-anchor': right ? 'end' : 'start', class: 'you' }, 'your file: ' + fmtDuration(lifetimeFor(s))));
     }
   }
 
@@ -119,7 +125,8 @@
     $('ret-hard').style.left = state.hard_fill * 100 + '%';
     const lines = [
       '  ' + fmtBytes(state.used) + ' of ' + fmtBytes(state.capacity) + ' in use (' + pct(state.fill) + ')',
-      '  steering toward ' + pct(state.target_fill) + ' · uploads refused above ' + pct(state.hard_fill),
+      '  steering toward ' + pct(state.target_fill),
+      '  uploads refused above ' + pct(state.hard_fill),
       '  incoming ≈ ' + fmtBytes(state.inflow_bytes_per_day) + ' a day',
     ];
     $('ret-storage').textContent = lines.join('\n');
@@ -128,7 +135,8 @@
     svg.textContent = '';
     const h = state.history || [];
     if (h.length > 1) {
-      const W = 600, H = 50, t0 = h[0].t, t1 = h[h.length - 1].t || t0 + 1;
+      svg.style.display = 'block';
+      const W = 960, H = 50, t0 = h[0].t, t1 = h[h.length - 1].t || t0 + 1;
       const x = (t) => (W * (t - t0)) / Math.max(1, t1 - t0);
       const y = (f) => H - 2 - (H - 4) * Math.min(1, f);
       svg.appendChild(el('line', { x1: 0, x2: W, y1: y(state.target_fill), y2: y(state.target_fill), class: 'target' }));
@@ -138,6 +146,7 @@
       const span = t1 - t0;
       $('ret-hist-label').textContent = 'fill, last ' + fmtDuration(span) + ' (dashed: target)';
     } else {
+      svg.style.display = 'none';
       $('ret-hist-label').textContent = 'fill history builds up as the server runs';
     }
     $('ret-updated').textContent = 'live · updated ' + new Date(state.updated_at * 1000).toLocaleTimeString();
@@ -154,8 +163,8 @@
       const r = await fetch('/api/v1/storage', { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       state = await r.json();
+      $('ret').style.display = 'block'; // shown first so the chart can measure its width
       render();
-      $('ret').style.display = '';
     } catch (e) {
       const u = $('ret-updated');
       if (u) u.textContent = 'live curve unavailable (' + e.message + ')';
@@ -172,4 +181,6 @@
 
   refresh();
   setInterval(refresh, 60000);
+  let resizeTimer = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawCurve, 150); });
 })();
