@@ -275,10 +275,20 @@ RETENTION CURVE  (days vs. file size)
 
 <div class="line"></div>
 <p style="font-size:12px; color:#888; line-height:2;">
+  {{if .Limits.Retention}}
+  storage protocol &mdash;
+  <a href="/whitepaper">{{template "protocolName"}} whitepaper</a> by OceanSlim
+  <br>
+  file backend &mdash;
+  <a href="https://0x0.st" target="_blank">0x0.st</a>
+  by <a href="https://git.0x0.st/mia" target="_blank">mia</a>
+  (self-hosted instance, where the idea started)
+  {{else}}
   storage protocol &mdash;
   <a href="https://0x0.st" target="_blank">0x0.st</a>
   by <a href="https://git.0x0.st/mia" target="_blank">mia</a>
   (self-hosted instance)
+  {{end}}
   <br>
   blossom layer &mdash;
   <a href="https://github.com/hzrd149/blossom" target="_blank">blossom protocol</a>
