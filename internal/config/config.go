@@ -178,6 +178,11 @@ type Config struct {
 	// Omitted from the file while every field is zero, so a deployment that
 	// never turns it on never sees the block.
 	RateLimit RateLimitConfig `yaml:"rate_limit,omitempty" json:"rate_limit"`
+	// Retention is self-regulating expiry for a 0x0-backed store. Omitted
+	// from the file while unset.
+	RetentionControl RetentionConfig `yaml:"retention,omitempty" json:"retention"`
+	// Onion is the Tor hidden-service listener. Omitted while unset.
+	Onion OnionConfig `yaml:"onion,omitempty" json:"onion"`
 }
 
 // PublicListingEnabled reports whether /list-all is served.
@@ -266,6 +271,12 @@ func (c *Config) Validate() error {
 	}
 	if len(c.AllowedMimeTypes) == 0 {
 		return errors.New("allowed_mime_types needs at least one entry (\"*\" for any)")
+	}
+	if err := c.RetentionControl.Validate(c.ZeroXZero.Enabled); err != nil {
+		return err
+	}
+	if err := c.Onion.Validate(); err != nil {
+		return err
 	}
 	if err := c.RateLimit.Validate(c.MaxUploadSizeBytes); err != nil {
 		return err

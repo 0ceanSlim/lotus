@@ -32,6 +32,7 @@ func getBlob(services core.Services) gin.HandlerFunc {
 			}
 			defer upstream.Body.Close()
 			ctx.Header("Content-Type", upstream.Header.Get("Content-Type"))
+			setBlobHeaders(ctx, upstream.Header.Get("Content-Type"))
 			ctx.Header("Content-Length", upstream.Header.Get("Content-Length"))
 			ctx.Status(http.StatusOK)
 			io.Copy(ctx.Writer, upstream.Body)
@@ -42,6 +43,7 @@ func getBlob(services core.Services) gin.HandlerFunc {
 		mType := mimetype.Detect(fileBytes)
 		ctx.Header("Content-Type", mType.String())
 		ctx.Header("Accept-Ranges", "bytes")
+		setBlobHeaders(ctx, mType.String())
 
 		rangeHeader := ctx.GetHeader("Range")
 		if rangeHeader == "" {

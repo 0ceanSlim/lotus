@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/0ceanSlim/lotus/internal/config"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
+	"github.com/0ceanSlim/lotus/internal/retention"
 	"github.com/0ceanSlim/lotus/internal/zeroxzero"
 )
 
@@ -25,8 +27,14 @@ type zeroXZeroBlobService struct {
 	conf                     config.ZeroXZeroConfig
 	cdnBaseUrl               string
 	maxStoragePerPubkeyBytes atomic.Int64
-	log                      *zap.Logger
+	// retention, when set, chooses and quotes each file's expiry; without
+	// it the fixed 0x0 curve from zero_x_zero applies.
+	retention *retention.Controller
+	log       *zap.Logger
 }
+
+// SetRetention hands the service the controller that picks expiries.
+func (s *zeroXZeroBlobService) SetRetention(c *retention.Controller) { s.retention = c }
 
 func NewZeroXZeroBlobService(
 	database *sql.DB,
@@ -76,20 +84,37 @@ func (s *zeroXZeroBlobService) Save(
 	created int64,
 ) (*core.Blob, error) {
 	if existing, err := s.queries.GetBlob0x0FromHash(ctx, sha256); err == nil {
-		return s.dbBlobToDescriptor(existing), nil
+		return s.Renew(ctx, s.dbBlobToDescriptor(existing))
 	}
 
-	fileUrl, err := s.client.Upload(blob, sha256)
+	now := time.Now()
+	var expiry int64
+	if s.retention != nil {
+		s.retention.Offer(size)
+		if err := s.retention.Admit(size); err != nil {
+			return nil, core.ErrServerFull
+		}
+		expiry = s.retention.ExpiryFor(sha256, size, now)
+	} else {
+		expiry = s.calculateExpiry(size)
+	}
+
+	stored, err := s.client.Upload(blob, sha256, expiry)
 	if err != nil {
 		return nil, fmt.Errorf("0x0 upload: %w", err)
 	}
-
-	expiry := s.calculateExpiry(size)
+	// The backend rounds a request down to its own ceiling; promise only
+	// what it will actually keep.
+	if stored.ExpiresAt > 0 && stored.ExpiresAt < expiry {
+		s.log.Warn("0x0 backend shortened an expiry; raise FHOST_MAX_EXPIRATION to at least retention.ttl_max",
+			zap.Int64("asked", expiry), zap.Int64("got", stored.ExpiresAt))
+		expiry = stored.ExpiresAt
+	}
 
 	row, err := s.queries.InsertBlob0x0(ctx, db.InsertBlob0x0Params{
 		Hash:    sha256,
 		Pubkey:  pubkey,
-		Url:     fileUrl,
+		Url:     stored.Url,
 		Size:    size,
 		Type:    mimeType,
 		Expiry:  sql.NullInt64{Int64: expiry, Valid: true},
@@ -98,7 +123,42 @@ func (s *zeroXZeroBlobService) Save(
 	if err != nil {
 		return nil, fmt.Errorf("insert blob_0x0: %w", err)
 	}
+	if stored.Token != "" {
+		if err := s.queries.SetBlob0x0Token(ctx, stored.Token, sha256); err != nil {
+			s.log.Error("could not record 0x0 management token", zap.Error(err))
+		}
+	}
+	if s.retention != nil {
+		s.retention.Commit(size)
+	}
 
+	return s.dbBlobToDescriptor(row), nil
+}
+
+// Renew is called when a file that is already stored is uploaded again: its
+// expiry becomes the later of the current one and what a new upload would
+// get now, on the backend as well.
+func (s *zeroXZeroBlobService) Renew(ctx context.Context, blob *core.Blob) (*core.Blob, error) {
+	if s.retention == nil {
+		return blob, nil
+	}
+	next := s.retention.ExpiryFor(blob.Sha256, blob.Size, time.Now())
+	if next <= blob.Expires {
+		return blob, nil
+	}
+	row, err := s.queries.GetBlob0x0FromHash(ctx, blob.Sha256)
+	if err != nil {
+		return blob, nil
+	}
+	token, _ := s.queries.GetBlob0x0Token(ctx, blob.Sha256)
+	if err := s.client.SetExpiry(row.Url, token, next); err != nil {
+		// Without the backend's agreement the old expiry stands.
+		return blob, nil
+	}
+	if err := s.queries.UpdateBlob0x0Expiry(ctx, sql.NullInt64{Int64: next, Valid: true}, blob.Sha256); err != nil {
+		return blob, nil
+	}
+	row.Expiry = sql.NullInt64{Int64: next, Valid: true}
 	return s.dbBlobToDescriptor(row), nil
 }
 
@@ -138,7 +198,19 @@ func (s *zeroXZeroBlobService) ListMeta(ctx context.Context, pubkey string) ([]*
 func (s *zeroXZeroBlobService) DeleteFromHash(ctx context.Context, sha256 string) error {
 	row, err := s.queries.GetBlob0x0FromHash(ctx, sha256)
 	if err == nil {
-		_ = s.client.Delete(row.Url)
+		token, _ := s.queries.GetBlob0x0Token(ctx, sha256)
+		if err := s.client.Delete(row.Url, token); err != nil {
+			if errors.Is(err, zeroxzero.ErrNoToken) {
+				// Uploaded before tokens were recorded: the backend keeps
+				// the bytes until its own expiry.
+				s.log.Warn("0x0 file has no management token; the backend keeps it until it expires", zap.String("hash", sha256))
+			} else {
+				return fmt.Errorf("0x0 delete: %w", err)
+			}
+		}
+		if s.retention != nil {
+			s.retention.Release(row.Size)
+		}
 	}
 	return s.queries.DeleteBlob0x0FromHash(ctx, sha256)
 }
@@ -171,6 +243,7 @@ func (s *zeroXZeroBlobService) dbBlobToDescriptor(row db.Blobs0x0) *core.Blob {
 		Size:        row.Size,
 		Type:        row.Type,
 		Uploaded:    row.Created,
+		Expires:     row.Expiry.Int64,
 		NIP94: &core.NIP94FileMetadata{
 			Url:            publicUrl,
 			MimeType:       row.Type,

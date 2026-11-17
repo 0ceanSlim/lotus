@@ -111,3 +111,35 @@ rate_limit:
   # header names the real client. A Cloudflare tunnel or nginx on this machine
   # needs nothing here.
   # trusted_proxies: ["10.0.0.0/8"]
+
+# ── Self-regulating retention (0x0 deployments) ─────────────────────────
+#
+# Off by default. With it on, each upload's expiry is chosen so the store
+# holds its usage near target_fill of capacity_bytes: lifetimes stretch when
+# the server is quiet and shrink when it is busy. The expiry is quoted before
+# the upload (GET /api/v1/storage/quote, or HEAD /upload), held for
+# quote_hold, and kept. Uploads are refused (507) above hard_fill; nothing is
+# ever deleted early. The 0x0 backend's FHOST_MAX_EXPIRATION must be at least
+# ttl_max or it will shorten promises. See docs/self-regulating-storage.
+#
+# retention:
+#   enabled: true
+#   capacity_bytes: 107374182400   # 100 GB
+#   target_fill: 0.70
+#   hard_fill: 0.95
+#   ttl_min: "24h"                  # a promise
+#   ttl_max: "8760h"                # a ceiling (one year)
+#   alpha: 0.5                      # 0: same lifetime for every size; 1: same bytes x time
+#   size_ref_bytes: 1048576
+#   quote_hold: "15m"
+#   max_rise_per_day: 2
+
+# ── Tor hidden service ──────────────────────────────────────────────────
+#
+# A second, loopback-only listener for tor's HiddenServicePort. Requests
+# there ignore forwarded-address headers and share one upload budget; url is
+# advertised to clearnet visitors with an Onion-Location header.
+#
+# onion:
+#   listen_addr: "127.0.0.1:8005"
+#   url: "http://<56 characters>.onion"

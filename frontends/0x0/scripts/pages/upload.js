@@ -45,6 +45,17 @@
   const signoutLink = $('signout-link');
   const filesBox = $('my-files');
   const filesList = $('my-files-list');
+  const resultExpiry = $('result-expiry');
+  const optStrip = $('opt-strip');
+  const optCompress = $('opt-compress');
+  const quoteBox = $('quote');
+  const quoteFile = $('quote-file');
+  const quoteText = $('quote-text');
+  const quoteHold = $('quote-hold');
+  const confirmBtn = $('confirm-btn');
+  const cancelBtn = $('cancel-btn');
+  const RETENTION = !!limits.retention;
+  const OPTS_KEY = '0x0.upload-options';
 
   let signer = null;   // mill signer while signed in
   let current = null;  // { sha256, url, key } behind the result card
@@ -165,28 +176,145 @@
     return what + ' failed: ' + (res.reason || msg || ('HTTP ' + res.status));
   }
 
+  // ── options, quote, confirm ──────────────────────────────────────────
+
+  function loadOptions() {
+    try {
+      const o = JSON.parse(localStorage.getItem(OPTS_KEY) || 'null');
+      if (o) { optStrip.checked = !!o.strip; optCompress.checked = !!o.compress; }
+    } catch (_) { /* defaults */ }
+  }
+
+  function saveOptions() {
+    try { localStorage.setItem(OPTS_KEY, JSON.stringify({ strip: optStrip.checked, compress: optCompress.checked })); } catch (_) { /* private mode */ }
+  }
+
+  function fmtWhen(unix) {
+    return new Date(unix * 1000).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function fmtLeft(sec) {
+    const fmt = window.RetentionView ? window.RetentionView.fmtDuration : (x) => Math.round(x / 86400) + ' days';
+    return fmt(Math.max(0, sec));
+  }
+
+  // displayUrl shows links on the address the visitor is using, so a link
+  // copied on the onion site is an onion link. The path is the blob's hash
+  // either way, so both work.
+  function displayUrl(url) {
+    if (!/\.onion$/i.test(window.location.hostname)) return url;
+    try { const u = new URL(url); return window.location.origin + u.pathname; } catch (_) { return url; }
+  }
+
+  async function getQuote(hash, size) {
+    const r = await fetch('/api/v1/storage/quote?sha256=' + hash + '&size=' + size, { cache: 'no-store' });
+    let data = {};
+    try { data = await r.json(); } catch (_) { /* empty */ }
+    if (!r.ok) {
+      const res = { status: r.status, text: '', reason: r.headers.get('X-Reason') || data.message, retryAfter: r.headers.get('Retry-After') };
+      throw new Error(failureMessage(res, 'quote'));
+    }
+    return data;
+  }
+
+  // askToConfirm shows the quote and resolves true on "upload", false on
+  // "cancel". The countdown shows how long the quoted expiry is held; once
+  // it lapses the button fetches a fresh quote instead.
+  function askToConfirm(prep) {
+    return new Promise((resolve) => {
+      let timer = null;
+      const finish = (ok) => {
+        clearInterval(timer);
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        quoteBox.style.display = 'none';
+        if (window.RetentionView) window.RetentionView.mark(0);
+        resolve(ok);
+      };
+      const render = () => {
+        const q = prep.quote;
+        quoteText.textContent = 'kept until ' + fmtWhen(q.expires_at) + '  (' + fmtLeft(q.expires_at - Date.now() / 1000) + ')';
+        const left = q.hold_until - Math.floor(Date.now() / 1000);
+        if (left > 0) {
+          const m = Math.floor(left / 60), sec = String(left % 60).padStart(2, '0');
+          quoteHold.textContent = 'this expiry is held for you for ' + m + ':' + sec + '. upload before then and it is yours.';
+          confirmBtn.textContent = 'upload';
+        } else {
+          quoteHold.textContent = 'the hold ran out. get a fresh quote (it may differ if the server got busier or quieter).';
+          confirmBtn.textContent = 're-quote';
+        }
+      };
+      quoteFile.textContent = prep.name + ' · ' + fmtBytes(prep.size) + (prep.note.length ? ' · ' + prep.note.join(', ') : '');
+      render();
+      quoteBox.style.display = 'block';
+      if (window.RetentionView) window.RetentionView.mark(prep.size);
+      timer = setInterval(render, 1000);
+      confirmBtn.onclick = async () => {
+        if (prep.quote.hold_until > Math.floor(Date.now() / 1000)) { finish(true); return; }
+        confirmBtn.disabled = true;
+        try { prep.quote = await getQuote(prep.hash, prep.size); render(); }
+        catch (e) { setStatus(e.message, 'err'); }
+        finally { confirmBtn.disabled = false; }
+      };
+      cancelBtn.onclick = () => finish(false);
+    });
+  }
+
+  // prepare runs the chosen processing in the browser and hashes the result.
+  async function prepare(file) {
+    let blob = file;
+    let note = [];
+    const MP = window.MediaProcess;
+    const want = { strip: optStrip.checked, compress: optCompress.checked };
+    if (MP && (want.strip || want.compress) && (MP.canStrip(file) || MP.canCompress(file))) {
+      try {
+        const out = await MP.process(file, want, (msg) => setStatus(msg, 'info'));
+        blob = out.blob;
+        note = out.note;
+      } catch (e) {
+        throw new Error('processing failed: ' + (e.message || e) + '. untick the options to upload the original.');
+      }
+    }
+    if (MAX_BYTES && blob.size > MAX_BYTES) {
+      throw new Error('file too large. max ' + fmtBytes(MAX_BYTES) + (want.compress ? '' : '. try "compress".'));
+    }
+    setStatus('hashing file...', 'info');
+    const buffer = await blob.arrayBuffer();
+    const hash = await sha256hex(buffer);
+    return { name: file.name || 'file', size: buffer.byteLength, type: blob.type || file.type, buffer, hash, note };
+  }
+
   async function handleFile(file) {
     if (busy) return;
     busy = true;
     hideResult();
+    quoteBox.style.display = 'none';
     progressWrap.style.display = 'none';
     progressBar.style.width = '0%';
 
     try {
-      if (MAX_BYTES && file.size > MAX_BYTES) {
-        setStatus('file too large. max ' + fmtBytes(MAX_BYTES) + '.', 'err');
+      let prep;
+      try {
+        prep = await prepare(file);
+      } catch (e) {
+        setStatus(e.message, 'err');
         return;
       }
 
-      setStatus('hashing file...', 'info');
-      let buffer;
-      try {
-        buffer = await file.arrayBuffer();
-      } catch (e) {
-        setStatus('could not read file: ' + e.message, 'err');
-        return;
+      if (RETENTION) {
+        setStatus('asking how long it would be kept...', 'info');
+        try {
+          prep.quote = await getQuote(prep.hash, prep.size);
+        } catch (e) {
+          setStatus(e.message, 'err');
+          return;
+        }
+        setStatus('check the quote, then upload.', 'info');
+        if (!(await askToConfirm(prep))) {
+          setStatus('cancelled. nothing was sent.', 'dim');
+          return;
+        }
       }
-      const hash = await sha256hex(buffer);
 
       let key = null;
       if (!signer) {
@@ -197,7 +325,7 @@
       setStatus(signer ? 'signing with your key...' : 'signing...', 'info');
       let header;
       try {
-        header = await authHeader('upload', hash, key);
+        header = await authHeader('upload', prep.hash, key);
       } catch (e) {
         setStatus('signing cancelled or failed: ' + (e.message || e), 'err');
         return;
@@ -205,7 +333,7 @@
 
       setStatus('uploading...', 'info');
       progressWrap.style.display = 'block';
-      const res = await request('PUT', '/upload', header, buffer, file.type, (e) => {
+      const res = await request('PUT', '/upload', header, prep.buffer, prep.type, (e) => {
         if (e.lengthComputable) progressBar.style.width = Math.round((e.loaded / e.total) * 100) + '%';
       });
       progressBar.style.width = '100%';
@@ -230,7 +358,8 @@
       setStatus(foreign ? 'done. this file was already here.' : 'done.', 'ok');
       // The one-time key is kept for signing (a short link still needs a
       // signature) but not shown when it cannot delete the file.
-      showResult({ sha256: descriptor.sha256 || hash, url: descriptor.url, key, foreign });
+      showResult({ sha256: descriptor.sha256 || prep.hash, url: displayUrl(descriptor.url), key, foreign, expires: descriptor.expires_at || 0, quoted: prep.quote ? prep.quote.expires_at : 0 });
+      if (window.RetentionView) window.RetentionView.refresh();
       if (signer) loadMyFiles();
     } finally {
       busy = false;
@@ -242,6 +371,16 @@
   function showResult(entry) {
     current = entry;
     resultUrl.textContent = entry.url;
+    if (entry.expires) {
+      let line = 'kept until ' + fmtWhen(entry.expires) + ' (' + fmtLeft(entry.expires - Date.now() / 1000) + ')';
+      if (entry.quoted && entry.expires >= entry.quoted) line += ', as quoted';
+      else if (entry.quoted && entry.expires < entry.quoted) line += '. the quote lapsed, so this is the current lifetime';
+      resultExpiry.textContent = line;
+      resultExpiry.style.display = '';
+    } else {
+      resultExpiry.textContent = '';
+      resultExpiry.style.display = 'none';
+    }
     shortUrl.textContent = '';
     shortBox.style.display = 'none';
     foreignNote.style.display = entry.foreign ? 'block' : 'none';
@@ -333,6 +472,7 @@
       '0x0 one-time key',
       '',
       'file:  ' + current.url,
+      current.expires ? 'until: ' + new Date(current.expires * 1000).toISOString() : null,
       current.short ? 'short: ' + current.short : null,
       'nsec:  ' + current.key.nsec,
       'npub:  ' + current.key.npub,
@@ -503,13 +643,13 @@
       const row = document.createElement('div');
       row.className = 'file-row';
       const link = document.createElement('a');
-      link.href = b.url;
+      link.href = displayUrl(b.url);
       link.target = '_blank';
       link.rel = 'noopener';
       link.textContent = b.url.replace(/^https?:\/\/[^/]+\//, '');
       const meta = document.createElement('span');
       meta.className = 'dim';
-      meta.textContent = ' ' + fmtBytes(b.size || 0);
+      meta.textContent = ' ' + fmtBytes(b.size || 0) + (b.expires_at ? ' · until ' + fmtWhen(b.expires_at) : '');
       const del = document.createElement('button');
       del.className = 'btn';
       del.textContent = 'delete';
@@ -560,6 +700,8 @@
     fileInput.value = '';
   });
 
+  optStrip.addEventListener('change', saveOptions);
+  optCompress.addEventListener('change', saveOptions);
   copyBtn.addEventListener('click', () => copyText(resultUrl.textContent, copyBtn));
   shortBtn.addEventListener('click', shortenCurrent);
   copyShortBtn.addEventListener('click', () => copyText(shortUrl.textContent, copyShortBtn));
@@ -572,6 +714,7 @@
   if (!window.ThrowawayKey) {
     setStatus('this browser cannot make keys (no WebCrypto); sign in to upload.', 'err');
   }
+  loadOptions();
   renderAccount();
   restoreSigner();
 })();

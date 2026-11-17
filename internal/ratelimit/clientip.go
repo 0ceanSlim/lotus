@@ -48,6 +48,9 @@ func parseProxies(entries []string) ([]proxyNet, error) {
 // one, otherwise the peer address. IPv6 is bucketed by /64, since one host
 // usually holds a whole /64 and could otherwise rotate through it.
 func (l *Limiter) ClientIP(r *http.Request) string {
+	if IsOnion(r) {
+		return OnionBucket
+	}
 	host := r.RemoteAddr
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h

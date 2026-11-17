@@ -329,3 +329,29 @@ func TestHumanFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestOnionRequestsShareOneBucketAndIgnoreForwarding(t *testing.T) {
+	l, err := New(Config{Enabled: true, UploadsPerMinute: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen *http.Request
+	h := OnionHandler(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { seen = r }))
+	req := httptest.NewRequest(http.MethodPut, "/upload", nil)
+	req.RemoteAddr = "127.0.0.1:5555"
+	req.Header.Set("CF-Connecting-IP", "203.0.113.9")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if got := l.ClientIP(seen); got != OnionBucket {
+		t.Errorf("onion request bucketed as %q", got)
+	}
+	if seen.Header.Get("CF-Connecting-IP") != "" {
+		t.Error("forwarding header survived the onion listener")
+	}
+	// The same header on the clearnet listener is still believed from loopback.
+	clear := httptest.NewRequest(http.MethodPut, "/upload", nil)
+	clear.RemoteAddr = "127.0.0.1:5555"
+	clear.Header.Set("CF-Connecting-IP", "203.0.113.9")
+	if got := l.ClientIP(clear); got != "203.0.113.9" {
+		t.Errorf("clearnet request bucketed as %q", got)
+	}
+}

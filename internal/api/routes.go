@@ -58,8 +58,24 @@ func SetupRoutes(
 			"Accept-Ranges",
 			"Content-Range",
 			"Content-Type",
+			HeaderXReason,
+			HeaderXExpiresAt,
+			HeaderXRetention,
+			"Retry-After",
 		},
 	}))
+
+	// Advertise the hidden service to clearnet visitors; Tor Browser offers
+	// to switch. Read per request because the setting is hot.
+	r.Use(func(ctx *gin.Context) {
+		if u := strings.TrimRight(store.Get().Onion.Url, "/"); u != "" && !ratelimit.IsOnion(ctx.Request) {
+			ctx.Header("Onion-Location", u+ctx.Request.URL.RequestURI())
+		}
+	})
+
+	if ctl := retentionOf(services); ctl != nil {
+		mountRetention(r, ctl)
+	}
 
 	r.GET("/.well-known/health", func(ctx *gin.Context) {
 		ctx.Status(http.StatusOK)
@@ -127,6 +143,7 @@ func SetupRoutes(
 			MaxUploadBytes: conf.MaxUploadSizeBytes,
 			MaxTotalBytes:  conf.MaxTotalStorageBytes,
 			Evicts:         conf.EvictsWhenFull(),
+			Retention:      conf.ZeroXZero.Enabled && conf.RetentionControl.Enabled,
 		}
 		if rl := conf.RateLimit; rl.Enabled {
 			limits.AnonymousUploads = rl.AnonymousUploads
@@ -215,7 +232,7 @@ func SetupRoutes(
 	// per-network limiter after the signature check, so it cannot be dodged
 	// by minting keys; HEAD /upload reports a would-be refusal without
 	// charging anything.
-	r.HEAD("/upload", nostrAuthMiddleware("upload", log), uploadPeek(limiter, trusted), uploadRequirements(services))
+	r.HEAD("/upload", nostrAuthMiddleware("upload", log), uploadPeek(limiter, trusted), uploadQuoteHeaders(services), uploadRequirements(services))
 	r.PUT("/upload", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), uploadBlob(services, store, cdnBaseUrl))
 	r.PUT("/mirror", nostrAuthMiddleware("upload", log), uploadLimit(limiter, trusted), mirrorBlob(services, cdnBaseUrl))
 	r.GET("/list/:pubkey", listBlobs(services))

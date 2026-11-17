@@ -31,6 +31,7 @@ type Blob struct {
 	Type        string
 	Blob        []byte
 	Uploaded    int64
+	Expires     int64 // unix seconds the store promises to keep it until; 0 when not ephemeral
 	NIP94       *NIP94FileMetadata
 }
 

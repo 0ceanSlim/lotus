@@ -14,6 +14,7 @@ import (
 	"github.com/0ceanSlim/lotus/internal/config"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
+	"github.com/0ceanSlim/lotus/internal/retention"
 )
 
 // uploadBlob stores a signed upload. The request body is capped at the
@@ -67,6 +68,11 @@ func uploadBlob(services core.Services, store *config.Store, cdnBaseUrl string) 
 func writeBlobError(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, core.ErrServerFull):
+		if v, ok := ctx.Get(ctxRetention); ok {
+			if ctl, ok := v.(*retention.Controller); ok && ctl != nil {
+				ctx.Header("Retry-After", retryAfterSeconds(ctl))
+			}
+		}
 		refuse(ctx, http.StatusInsufficientStorage, err.Error())
 	case errors.Is(err, core.ErrFileSizeLimit):
 		refuse(ctx, http.StatusRequestEntityTooLarge, err.Error())

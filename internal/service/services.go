@@ -11,6 +11,7 @@ import (
 	"github.com/0ceanSlim/lotus/internal/config"
 	"github.com/0ceanSlim/lotus/internal/core"
 	"github.com/0ceanSlim/lotus/internal/db"
+	"github.com/0ceanSlim/lotus/internal/retention"
 )
 
 // Services wires the domain services together and implements core.Services.
@@ -25,6 +26,7 @@ type Services struct {
 	session    core.SessionService
 	short      core.ShortLinkService
 	nostrUsers *NostrUsersService
+	retention  *retention.Controller
 	log        *zap.Logger
 }
 
@@ -46,6 +48,14 @@ func New(
 		log.Fatal(err.Error())
 	}
 	applyStoragePolicy(blobService, conf)
+
+	var retentionCtl *retention.Controller
+	if conf.ZeroXZero.Enabled && conf.RetentionControl.Enabled {
+		retentionCtl = retention.New(retentionParams(conf), retentionSource{queries})
+		if rs, ok := blobService.(interface{ SetRetention(*retention.Controller) }); ok {
+			rs.SetRetention(retentionCtl)
+		}
+	}
 
 	acrService, err := NewACRService(conf, log)
 	if err != nil {
@@ -73,6 +83,7 @@ func New(
 	}
 
 	s := &Services{
+		retention: retentionCtl,
 		blobs:    blobService,
 		acrs:     acrService.(*ACRService),
 		mimes:    mimeService.(*mimeTypeService),
@@ -93,7 +104,18 @@ func New(
 // Start launches background routines bound to ctx.
 func (s *Services) Start(ctx context.Context) {
 	s.nostrUsers.StartPeriodicRefresh(ctx, 5*time.Minute)
+	if s.retention != nil {
+		if err := s.retention.Seed(ctx, time.Now()); err != nil {
+			s.log.Error("retention: initial load failed", zap.Error(err))
+		}
+		go s.retention.Run(ctx, 5*time.Minute, func(err error) {
+			s.log.Error("retention: tick failed", zap.Error(err))
+		})
+	}
 }
+
+// Retention is the expiry controller, or nil when retention is off.
+func (s *Services) Retention() *retention.Controller { return s.retention }
 
 // Apply adopts a new configuration. It returns an error, and changes
 // nothing, when the configuration names a MIME type the server does not know.
@@ -107,6 +129,9 @@ func (s *Services) Apply(conf config.Config) error {
 		q.SetQuota(conf.MaxStoragePerPubkeyBytes)
 	}
 	applyStoragePolicy(s.blobs, &conf)
+	if s.retention != nil {
+		s.retention.SetParams(retentionParams(&conf))
+	}
 	s.nostrUsers.SetURL(conf.NostrUsersUrl)
 	return nil
 }

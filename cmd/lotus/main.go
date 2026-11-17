@@ -6,8 +6,10 @@ import (
 	"flag"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -121,6 +123,22 @@ func main() {
 	}
 
 	router := api.SetupRoutes(services, queries, store, limiter, services.NostrUsers().GetCachedKeys, logger, webFS)
+	// Tor hidden service: the same site on a loopback-only port, with
+	// forwarding headers dropped and every request in one shared budget.
+	if addr := strings.TrimSpace(conf.Onion.ListenAddr); addr != "" {
+		onion := &http.Server{
+			Addr:              addr,
+			Handler:           ratelimit.OnionHandler(router),
+			ReadHeaderTimeout: 30 * time.Second,
+		}
+		go func() {
+			logger.Info("onion listener", zap.String("addr", addr), zap.String("url", conf.Onion.Url))
+			if err := onion.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("onion listener stopped", zap.Error(err))
+			}
+		}()
+	}
+
 	logger.Info("listening", zap.String("addr", conf.ApiAddr), zap.String("cdn_url", conf.CdnUrl))
 	if err := router.Run(conf.ApiAddr); err != nil {
 		logger.Fatal(err.Error())

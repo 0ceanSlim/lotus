@@ -197,6 +197,16 @@ The drive frontend talks to `/api/v1/`, which is grain's client API mounted on l
 
 The legacy `/api/auth/*`, `/api/user/*`, `/api/profile` and `/list-all` endpoints used by the 0x0 frontend are unchanged.
 
+### Self-regulating retention (0x0)
+
+With a `retention` block, a 0x0-backed server picks each upload's lifetime so its disk holds steady near a target fill instead of filling up: `T(s) = clamp(θ · (s_ref/s)^α, ttl_min, ttl_max)`, with θ re-solved every five minutes against the exact expiry schedule of what is already stored and the measured upload rate (the look-ahead controller in `docs/self-regulating-storage`). Every expiry is a promise: quoted before upload (`GET /api/v1/storage/quote?sha256=&size=`, or `X-Expires-At` on `HEAD /upload`), held for `quote_hold`, returned as `expires_at` in the blob descriptor, and never shortened. Above `hard_fill` uploads get `507` with `Retry-After` until the next expiry. Re-uploading a stored file extends it. `GET /api/v1/storage` publishes capacity, fill, the live curve and a week of history; the 0x0 page draws it.
+
+The 0x0 page can also strip metadata and compress images and video before upload, in the browser, so originals never reach the server. Video uses ffmpeg.wasm from `scripts/vendor/ffmpeg/core/`, which is not in git (32 MB); fetch it with `tools/fetch-ffmpeg-core.sh`.
+
+### Tor
+
+`onion.listen_addr` opens a loopback-only listener for a hidden service (`HiddenServicePort 80 127.0.0.1:8005` in torrc). Requests there share one upload budget and cannot claim an address through forwarding headers; `onion.url` is advertised to clearnet visitors via `Onion-Location`.
+
 ### Per-network upload limits
 
 For a public, free-for-all server (anyone can mint a Nostr key, so a per-pubkey quota means nothing) the `rate_limit` block attaches limits to the client's network address instead: uploads per minute, a byte budget per window, and uploads in flight, applied to every `PUT /upload` and `PUT /mirror` after the signature check. A pubkey stays tied to the address it was first seen from for one window, so switching addresses with the same key charges both. Refused requests get `429` with `Retry-After` and `X-Reason`; `HEAD /upload` reports a would-be refusal without charging.

@@ -44,6 +44,9 @@ type LimitsView struct {
 	BytesPerWindow   int64
 	// Window is the budget window for people: "day", "12 hours".
 	Window string
+	// Retention says expiries are self-regulating, quoted and held: the
+	// page shows the live curve from /api/v1/storage and quotes uploads.
+	Retention bool
 }
 
 type PageData struct {

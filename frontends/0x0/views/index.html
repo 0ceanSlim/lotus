@@ -91,6 +91,9 @@
 {{if .Limits.AnonymousUploads}}
 <p>drop a file. get a link. no account needed.</p>
 <p class="dim" style="margin-top:0.4rem;">a one-time key is made in your browser to sign the upload and forgotten unless you keep it. <a href="#" class="signin-link">sign in</a> to upload under your own nostr key instead. nothing here is permanent. that's the point.</p>
+{{if .Limits.Retention}}
+<p class="dim" style="margin-top:0.4rem;">how long a file lives depends on its size and on how busy the server is: lifetimes stretch when it's quiet and shrink when it's busy, so the disk never fills. you see the exact expiry before you upload, and that's the one you get.</p>
+{{end}}
 {{if .Limits.Evicts}}
 <p class="dim" style="margin-top:0.4rem; font-size:12px;">when the server is full, the oldest and largest files are removed to make room. the retention curve is a ceiling, not a promise.</p>
 {{end}}
@@ -101,6 +104,37 @@
 
 <div class="line"></div>
 
+{{if .Limits.Retention}}
+<style>
+  #ret { display: none; }
+  #ret svg { width: 100%; height: auto; display: block; font-family: inherit; font-size: 11px; }
+  #ret svg text { fill: #777; font-weight: 400; }
+  #ret svg text.label { fill: #555; }
+  #ret svg text.you { fill: #fff; font-weight: 600; }
+  #ret svg .axis { stroke: #555; stroke-width: 1; }
+  #ret svg .grid { stroke: #1c1c1c; stroke-width: 1; }
+  #ret svg .curve { fill: none; stroke: #fff; stroke-width: 2; }
+  #ret svg .mark { stroke: #777; stroke-dasharray: 3 3; }
+  #ret svg .dot { fill: #fff; }
+  #ret svg .target { stroke: #555; stroke-dasharray: 4 4; }
+  #ret .head { color: #888; font-size: 12px; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  #ret pre { color: #888; font-size: 12px; line-height: 1.5; margin: 0.6rem 0; white-space: pre-wrap; }
+  #ret-bar { position: relative; height: 10px; border: 1px solid #444; margin: 0.8rem 0 0.2rem; }
+  #ret-used { position: absolute; left: 0; top: 0; bottom: 0; background: #fff; }
+  #ret-bar .tick { position: absolute; top: -4px; bottom: -4px; width: 1px; background: #888; }
+  #ret-bar .tick.hard { background: #f55; }
+</style>
+<section id="ret">
+  <div class="head"><span>RETENTION CURVE &nbsp;(days vs. file size)</span><span id="ret-updated">live</span></div>
+  <svg id="ret-curve" viewBox="0 0 600 220" role="img" aria-label="retention in days by file size"></svg>
+  <pre id="ret-examples"></pre>
+  <div class="head" style="margin-top:1.2rem;"><span>STORAGE</span><span><a href="https://github.com/0ceanSlim/lotus/tree/main/docs/self-regulating-storage" target="_blank" rel="noopener">how it works</a></span></div>
+  <div id="ret-bar"><div id="ret-used"></div><div class="tick" id="ret-target" title="target"></div><div class="tick hard" id="ret-hard" title="uploads refused above this"></div></div>
+  <pre id="ret-storage"></pre>
+  <svg id="ret-hist" viewBox="0 0 600 50" preserveAspectRatio="none" style="height:50px;" aria-label="fill history"></svg>
+  <div class="head" style="margin-top:0.2rem;"><span id="ret-hist-label"></span></div>
+</section>
+{{else}}
 <pre style="color:#888; font-size:12px; line-height:1.4;">
 RETENTION CURVE  (days vs. file size)
 
@@ -121,6 +155,7 @@ RETENTION CURVE  (days vs. file size)
   large      (~30MB)  ≈ 34 days
   max        ( 50MB)  = 30 days
 </pre>
+{{end}}
 
 <div class="line"></div>
 
@@ -151,6 +186,12 @@ RETENTION CURVE  (days vs. file size)
   .file-row { font-size: 12px; margin: 0.3rem 0; word-break: break-all; }
   .file-row a { color: #ddd; }
   .file-row .btn { margin-left: 0.6rem; padding: 0.1rem 0.5rem; font-size: 11px; }
+  #opts { margin: -0.6rem 0 1rem; color: #bbb; }
+  #opts label { display: inline-block; margin-right: 1.4rem; cursor: pointer; }
+  #opts input { accent-color: #fff; vertical-align: middle; }
+  #quote { display: none; margin: 1.5rem 0; border: 1px solid #fff; padding: 1.2rem; }
+  #quote-text { font-size: 15px; margin: 0.5rem 0 0.2rem; }
+  #quote-file { color: #bbb; word-break: break-all; }
 </style>
 
 <div id="drop-zone">
@@ -159,12 +200,30 @@ RETENTION CURVE  (days vs. file size)
 </div>
 <input type="file" id="file-input" />
 
+<div id="opts" class="small">
+  <label><input type="checkbox" id="opt-strip" checked> remove metadata <span class="dim">(location, camera, dates)</span></label>
+  <label><input type="checkbox" id="opt-compress"> compress <span class="dim">(smaller images and video)</span></label>
+  <div class="dim" style="margin-top:0.3rem;">done in your browser before anything is sent. images and video only.</div>
+</div>
+
 <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
 <div id="status" class="dim">waiting for file...</div>
+
+<div id="quote">
+  <div class="result-label">quote</div>
+  <div id="quote-file" class="small"></div>
+  <div id="quote-text"></div>
+  <div id="quote-hold" class="small dim"></div>
+  <div style="margin-top:0.9rem;">
+    <button id="confirm-btn" class="btn">upload</button>
+    <button id="cancel-btn" class="btn">cancel</button>
+  </div>
+</div>
 
 <div id="result">
   <div class="result-label">link</div>
   <div id="result-url"></div>
+  <div id="result-expiry" class="small dim" style="margin:-0.5rem 0 1rem;"></div>
   <button id="copy-btn" class="btn">copy</button>
   <button id="short-btn" class="btn">short link</button>
   <button id="delete-btn" class="btn">delete now</button>
@@ -235,9 +294,12 @@ RETENTION CURVE  (days vs. file size)
     maxUploadBytes: {{.Limits.MaxUploadBytes}},
     uploadsPerMinute: {{.Limits.UploadsPerMinute}},
     bytesPerWindow: {{.Limits.BytesPerWindow}},
-    window: {{.Limits.Window}}
+    window: {{.Limits.Window}},
+    retention: {{.Limits.Retention}}
   };
 </script>
+<script src="/scripts/core/media-process.js?v={{assetVersion}}"></script>
+{{if .Limits.Retention}}<script src="/scripts/pages/retention.js?v={{assetVersion}}"></script>{{end}}
 <script src="/scripts/vendor/mill.umd.min.js?v={{assetVersion}}"></script>
 <script src="/scripts/core/throwaway-key.js?v={{assetVersion}}"></script>
 <script src="/scripts/pages/upload.js?v={{assetVersion}}"></script>

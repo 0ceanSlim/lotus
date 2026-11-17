@@ -53,6 +53,13 @@ func UploadBlob(
 	}
 
 	if blob, err := blobs.GetFromHash(ctx, hash); err == nil {
+		// An ephemeral store extends a re-uploaded file to the later of its
+		// current expiry and the one a new upload would get.
+		if r, ok := blobs.(interface {
+			Renew(context.Context, *core.Blob) (*core.Blob, error)
+		}); ok {
+			return r.Renew(ctx, blob)
+		}
 		return blob, nil
 	}
 

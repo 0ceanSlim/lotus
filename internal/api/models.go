@@ -17,6 +17,7 @@ type blobDescriptor struct {
 	Type     string     `json:"type"`
 	Uploaded int64      `json:"uploaded"`
 	Pubkey   string     `json:"pubkey,omitempty"`
+	Expires  int64      `json:"expires_at,omitempty"`
 	NIP94    [][]string `json:"nip94,omitempty"`
 }
 
@@ -28,6 +29,7 @@ func fromDomainBlobDescriptor(blob *core.Blob) *blobDescriptor {
 		Type:     blob.Type,
 		Uploaded: blob.Uploaded,
 		Pubkey:   blob.Pubkey,
+		Expires:  blob.Expires,
 	}
 
 	if blob.NIP94 != nil {
