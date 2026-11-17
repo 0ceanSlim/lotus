@@ -1,6 +1,6 @@
-# Self-regulating ephemeral storage
+# EBB: Elastic Byte Budget
 
-Draft protocol, 2026-11-15. Applies to any fixed-size store whose objects expire: a Blossom server, a 0x0-style file drop, or a plain disk partition set aside as an "ephemeral section". Lifetimes in days are configuration, not the protocol; the protocol is how the store picks each object's lifetime so its usage holds steady by itself.
+Self-regulating ephemeral storage. Draft protocol, 2026-11-15. The whitepaper is `whitepaper.md`. Applies to any fixed-size store whose objects expire: a Blossom server, a 0x0-style file drop, or a plain disk partition set aside as an "ephemeral section". Lifetimes in days are configuration, not the protocol; the protocol is how the store picks each object's lifetime so its usage holds steady by itself.
 
 `sim.py` in this folder simulates every controller below against the same traffic. Run `python3 sim.py steps|flood|cycle|quiet`.
 

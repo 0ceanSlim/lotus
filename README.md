@@ -197,9 +197,9 @@ The drive frontend talks to `/api/v1/`, which is grain's client API mounted on l
 
 The legacy `/api/auth/*`, `/api/user/*`, `/api/profile` and `/list-all` endpoints used by the 0x0 frontend are unchanged.
 
-### Self-regulating retention (0x0)
+### Self-regulating retention (0x0): EBB
 
-With a `retention` block, a 0x0-backed server picks each upload's lifetime so its disk holds steady near a target fill instead of filling up: `T(s) = clamp(θ · (s_ref/s)^α, ttl_min, ttl_max)`, with θ re-solved every five minutes against the exact expiry schedule of what is already stored and the measured upload rate (the look-ahead controller in `docs/self-regulating-storage`). Every expiry is a promise: quoted before upload (`GET /api/v1/storage/quote?sha256=&size=`, or `X-Expires-At` on `HEAD /upload`), held for `quote_hold`, returned as `expires_at` in the blob descriptor, and never shortened. Above `hard_fill` uploads get `507` with `Retry-After` until the next expiry. Re-uploading a stored file extends it. `GET /api/v1/storage` publishes capacity, fill, the live curve and a week of history; the 0x0 page draws it.
+With a `retention` block (EBB, the Elastic Byte Budget), a 0x0-backed server picks each upload's lifetime so its disk holds steady near a target fill instead of filling up: `T(s) = clamp(θ · (s_ref/s)^α, ttl_min, ttl_max)`, with θ re-solved every five minutes against the exact expiry schedule of what is already stored and the measured upload rate (the look-ahead controller in `docs/self-regulating-storage`). Every expiry is a promise: quoted before upload (`GET /api/v1/storage/quote?sha256=&size=`, or `X-Expires-At` on `HEAD /upload`), held for `quote_hold`, returned as `expires_at` in the blob descriptor, and never shortened. Above `hard_fill` uploads get `507` with `Retry-After` until the next expiry. Re-uploading a stored file extends it. `GET /api/v1/storage` publishes capacity, fill, the live curve and a week of history; the 0x0 page draws it.
 
 The 0x0 page can also strip metadata and compress images and video before upload, in the browser, so originals never reach the server. Video uses ffmpeg.wasm from `scripts/vendor/ffmpeg/core/`, which is not in git (32 MB); fetch it with `tools/fetch-ffmpeg-core.sh`.
 

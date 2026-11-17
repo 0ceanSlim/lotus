@@ -87,7 +87,7 @@
 <p style="color:#888; font-size:12px; margin-top:0.6rem;">0x0.oslim.dev &mdash; ephemeral blossom storage &mdash; files expire, links work until they don't</p>
 {{if .Limits.Retention}}
 <p style="color:#888; font-size:12px; margin-top:0.5rem; max-width:44rem; line-height:1.6;">
-  runs on <span style="color:#ddd;">{{template "protocolName"}}</span>: a fixed-size store that sets each file's lifetime from its size and how busy the server is. quiet server, longer lifetimes; busy server, shorter ones, so the disk holds steady and never fills. you see the exact expiry before you upload, and that's the one you keep.
+  runs on <span style="color:#ddd;">{{template "protocolName"}}</span> ({{template "protocolLong"}}): a fixed-size store that sets each file's lifetime from its size and how busy the server is. quiet server, longer lifetimes; busy server, shorter ones, so the disk holds steady and never fills. you see the exact expiry before you upload, and that's the one you keep.
   <a href="/whitepaper">read the whitepaper &rarr;</a>
 </p>
 {{end}}

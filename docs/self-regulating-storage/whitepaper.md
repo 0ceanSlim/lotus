@@ -1,6 +1,6 @@
-# Self-Regulating Ephemeral Storage
+# EBB: Elastic Byte Budget
 
-### Fixed-capacity storage that holds its own usage steady by choosing, and keeping, every object's lifetime
+### Self-regulating ephemeral storage. Fixed-capacity storage that holds its own usage steady by choosing, and keeping, every object's lifetime
 
 **OceanSlim**
 November 2026 · Draft 1
@@ -9,7 +9,7 @@ November 2026 · Draft 1
 
 ## Abstract
 
-Free, open storage services such as anonymous file drops and public Blossom media servers face a basic tension. Limits loose enough to be useful when the service is quiet are too loose when it is busy, and the usual safety valve, a hard cap that refuses or evicts once the disk is full, punishes everyone at once and without warning. This paper describes a protocol for a store of fixed capacity in which every object receives an expiry time when it is written, that expiry is a promise never shortened later, and the store chooses those expiries so that its usage settles near a target level on its own.
+Free, open storage services such as anonymous file drops and public Blossom media servers face a basic tension. Limits loose enough to be useful when the service is quiet are too loose when it is busy, and the usual safety valve, a hard cap that refuses or evicts once the disk is full, punishes everyone at once and without warning. This paper describes EBB, the Elastic Byte Budget, a protocol for a store of fixed capacity in which every object receives an expiry time when it is written, that expiry is a promise never shortened later, and the store chooses those expiries so that its usage settles near a target level on its own.
 
 The design rests on two observations. First, by Little's law, the bytes a store holds equal its inflow multiplied by the mean lifetime it grants, so lifetime is the natural control variable. Second, because expiries are fixed at write time, an ephemeral store knows its own future occupancy exactly. This allows a *look-ahead* controller that plans against data already committed, instead of reacting to current fill as a feedback loop would. In simulation against step changes, floods and periodic traffic, the look-ahead controller refused 0.4% of offered bytes where a fixed retention curve of the 0x0.st kind refused 85%, and a conventional feedback controller 75%. When traffic exceeds what even minimum lifetimes can absorb, a fair-share admission rule measured in byte-time decides whose writes are refused, using only short-lived, in-memory knowledge of sources. The same protocol applies to a networked service or to a plain disk partition set aside as an ephemeral section.
 
@@ -33,7 +33,7 @@ This paper asks what such a store should do instead, given:
 2. traffic it does not control and cannot predict, and
 3. a commitment to tell each writer, truthfully and in advance, how long their data will live.
 
-The answer is a small control system with one variable, a few invariants, and a fairness rule. It is simple enough to implement in a few hundred lines.
+The answer is a small control system with one variable, a few invariants, and a fairness rule. It is simple enough to implement in a few hundred lines. We call it **EBB**, the **Elastic Byte Budget**: lifetimes stretch and shrink, the resource being budgeted is bytes over time, and, as in the tide it is named after, what flows in is matched by what ebbs out.
 
 ## 2. Background
 
